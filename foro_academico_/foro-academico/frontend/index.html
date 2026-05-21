@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Foro Académico</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://unpkg.com/vue@3"></script>
+</head>
+
+<body>
+
+<div id="app">
+
+  <!-- INICIO -->
+  <div v-if="pantalla === 'inicio'" class="inicio">
+    <div class="text-center">
+      <h1 class="mb-4">💬 Foro Académico</h1>
+      <button @click="pantalla='login'" class="btn btn-dark btn-lg w-100 mb-3">Ingresar usuario</button>
+      <button @click="pantalla='registro'" class="btn btn-success btn-lg w-100">Crear usuario</button>
+    </div>
+  </div>
+
+  <!-- LOGIN -->
+  <div v-if="pantalla === 'login'" class="container mt-5 col-md-4">
+    <div class="card p-4">
+      <h4>Login</h4>
+      <select v-model="rol" class="form-control mb-2">
+        <option disabled value="">Selecciona rol</option>
+        <option>Estudiante</option>
+        <option>Profesor</option>
+        <option>Administrador</option>
+      </select>
+      <input v-model="email" class="form-control mb-2" placeholder="Correo">
+      <input v-model="password" type="password" class="form-control mb-2" placeholder="Contraseña">
+      <button @click="login" class="btn btn-dark w-100">Ingresar</button>
+    </div>
+  </div>
+
+  <!-- REGISTRO -->
+  <div v-if="pantalla === 'registro'" class="container mt-5 col-md-4">
+    <div class="card p-4">
+      <h4>Registro</h4>
+      <select v-model="rol" class="form-control mb-2">
+        <option disabled value="">Selecciona rol</option>
+        <option>Estudiante</option>
+        <option>Profesor</option>
+        <option>Administrador</option>
+      </select>
+      <input v-model="nombre" class="form-control mb-2" placeholder="Nombre">
+      <input v-model="correo" class="form-control mb-2" placeholder="Correo">
+      <input v-model="pass" type="password" class="form-control mb-2" placeholder="Contraseña">
+      <button @click="registrar" class="btn btn-success w-100">Registrarse</button>
+    </div>
+  </div>
+
+  <!-- FORO -->
+  <div v-if="pantalla === 'foro'">
+
+    <nav class="navbar navbar-dark">
+      <div class="container-fluid">
+        <span class="navbar-brand">💬 Foro</span>
+        <input v-model="busqueda" class="form-control w-50" placeholder="Buscar preguntas...">
+        <button @click="logout" class="btn btn-danger">Salir</button>
+      </div>
+    </nav>
+
+    <div class="container-fluid">
+      <div class="row">
+
+        <div class="col-md-2 sidebar">
+          <ul class="nav flex-column">
+            <li @click="vista='inicio'">Inicio</li>
+            <li @click="vista='pregunta'">Haz pregunta</li>
+            <li @click="vista='colabora'">Colabora</li>
+            <li @click="vista='aprende'">Aprende</li>
+            <li @click="vista='contacto'">Contacto</li>
+          </ul>
+        </div>
+
+        <div class="col-md-10 content">
+
+          <div v-if="vista==='inicio'">
+            <h3>Preguntas</h3>
+            <div v-for="p in preguntasFiltradas" class="question-card">
+              <h5>{{p.titulo}}</h5>
+              <p>{{p.descripcion}}</p>
+            </div>
+          </div>
+
+          <div v-if="vista==='pregunta'">
+            <h3>Nueva pregunta</h3>
+            <input v-model="nueva.titulo" class="form-control mb-2" placeholder="Título">
+            <textarea v-model="nueva.descripcion" class="form-control mb-2"></textarea>
+            <button @click="agregarPregunta" class="btn btn-primary">Publicar</button>
+          </div>
+
+          <div v-if="vista==='contacto'">
+            <h3>Contacto</h3>
+            <input v-model="contacto.nombre" class="form-control mb-2" placeholder="Nombre">
+            <textarea v-model="contacto.mensaje" class="form-control mb-2"></textarea>
+            <button @click="enviarContacto" class="btn btn-primary">Enviar</button>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+.eggs/
+
+# Node (frontend)
+frontend/node_modules/
+frontend/dist/
+
+# Subidas locales (avatares, tareas)
+foro-academico/backend/static/uploads/
+
+# Entorno / secretos
+.env
+.env.*
+
+# IDE y sistema
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+
+# Archivos temporales del proyecto
+extract_diag.py
+_out.txt
+_full.py

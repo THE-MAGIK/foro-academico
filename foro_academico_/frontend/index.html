@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Foro Académico</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
+
+  <!-- Bootstrap -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="css/style.css">
+
+  <!-- Vue -->
+  <script src="https://unpkg.com/vue@3"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+</head>
+
+<body>
+
+<div id="app">
+
+  <!-- INICIO -->
+  <div v-if="pantalla === 'inicio'" class="inicio d-flex align-items-center justify-content-center">
+    <div class="text-center caja-inicio">
+      <p class="text-white-50 small text-uppercase tracking-wide mb-2">Comunidad académica</p>
+      <h1 class="mb-2 text-white fw-bold display-6">Foro académico</h1>
+      <p class="text-white-50 mb-4 px-2">Preguntas, respuestas y aula de tareas en un solo lugar.</p>
+
+      <button @click="pantalla='login'; loginDiagnostico = null" class="btn btn-light btn-lg w-100 mb-3 fw-semibold">
+        Ingresar
+      </button>
+
+      <button @click="pantalla='registro'" class="btn btn-outline-light btn-lg w-100">
+        Crear cuenta
+      </button>
+    </div>
+  </div>
+
+  <!-- LOGIN -->
+  <div v-if="pantalla === 'login'" class="auth-page d-flex align-items-center justify-content-center py-5 px-3">
+    <div class="card auth-card border-0 shadow-lg p-4 p-md-5 w-100" style="max-width: 420px">
+      <h4 class="fw-bold mb-1">Bienvenido</h4>
+      <p class="text-muted small mb-4">Inicia sesión para continuar</p>
+
+      <input
+        v-model="email"
+        type="email"
+        class="form-control form-control-lg mb-1"
+        :class="{ 'is-invalid': email && !loginCorreoValido }"
+        placeholder="Correo"
+        autocomplete="username"
+        @input="loginDiagnostico = null"
+      >
+      <p v-if="email && !loginCorreoValido" class="small text-danger mb-2">Escribe un correo válido (ejemplo: nombre@dominio.com).</p>
+      <input v-model="password" type="password" class="form-control form-control-lg mb-3" placeholder="Contraseña" autocomplete="current-password" @input="loginDiagnostico = null">
+
+      <div v-if="loginDiagnostico && loginDiagnostico.premisa_1" class="auth-diagnostico rounded-3 p-3 mb-3" :class="'auth-diagnostico--' + (loginDiagnostico.regla || 'info')">
+        <p class="auth-diagnostico-titulo fw-semibold small mb-2">{{ loginDiagnosticoTitulo }}</p>
+        <p class="small mb-1"><span class="text-muted">Premisa 1:</span> {{ loginDiagnostico.premisa_1 }}</p>
+        <p class="small mb-1"><span class="text-muted">Premisa 2:</span> {{ loginDiagnostico.premisa_2 }}</p>
+        <p class="small mb-0"><span class="text-muted">Conclusión:</span> {{ loginDiagnostico.conclusion }}</p>
+      </div>
+
+      <button
+        type="button"
+        @click="login"
+        class="btn btn-primary btn-lg w-100 mb-2 fw-semibold"
+        :disabled="!loginBotonHabilitado"
+      >Entrar</button>
+      <button @click="pantalla='inicio'; loginDiagnostico = null" class="btn btn-link w-100 text-decoration-none">Volver al inicio</button>
+    </div>
+  </div>
+
+  <!-- REGISTRO -->
+  <div v-if="pantalla === 'registro'" class="auth-page d-flex align-items-center justify-content-center py-5 px-3">
+    <div class="card auth-card border-0 shadow-lg p-4 p-md-5 w-100" style="max-width: 420px">
+      <h4 class="fw-bold mb-1">Crear cuenta</h4>
+      <p class="text-muted small mb-4">Elige tu rol y completa los datos</p>
+
+      <select v-model="rol" class="form-select form-select-lg mb-3">
+        <option disabled value="">Selecciona rol</option>
+        <option value="estudiante">Estudiante</option>
+        <option value="profesor">Profesor</option>
+        <option value="admin">Administrador</option>
+        <option value="superadmin">Administrador supremo</option>
+      </select>
+
+      <input v-model="nombre" class="form-control form-control-lg mb-3" placeholder="Nombre">
+      <input v-model="correo" class="form-control form-control-lg mb-3" placeholder="Correo" autocomplete="email">
+      <input v-model="pass" type="password" class="form-control form-control-lg mb-4" placeholder="Contraseña" autocomplete="new-password">
+
+      <button @click="registrar" class="btn btn-success btn-lg w-100 mb-2 fw-semibold">Registrarse</button>
+      <button @click="pantalla='inicio'" class="btn btn-link w-100 text-decoration-none">Volver al inicio</button>
+    </div>
+  </div>
+
+  <!-- FORO -->
+  <div v-if="pantalla === 'foro'">
+
+    <nav class="navbar navbar-app navbar-expand-lg shadow-sm">
+      <div class="container-fluid gap-2">
+        <span class="navbar-brand-app d-flex align-items-center gap-2 mb-0">
+          <span class="brand-dot" aria-hidden="true"></span>
+          <span class="fw-semibold">Foro académico</span>
+        </span>
+        <input
+          v-model="busqueda"
+          class="form-control form-control-app navbar-search mx-lg-3 my-2 my-lg-0"
+          placeholder="Buscar preguntas…"
+        >
+        <div class="d-flex align-items-center gap-2 ms-lg-auto flex-shrink-0">
+          <img
+            v-if="currentUser && currentUser.avatar_url"
+            :src="currentUser.avatar_url + (avatarCacheBust ? '?t=' + avatarCacheBust : '')"
+            alt=""
+            class="rounded-circle border user-avatar-thumb"
+            width="40"
+            height="40"
+          >
+          <span class="text-white-50 small d-none d-xl-inline text-truncate" style="max-width: 14rem">{{ mensaje }}</span>
+          <button @click="logout" type="button" class="btn btn-sm btn-outline-light">Salir</button>
+        </div>
+      </div>
+    </nav>
+
+    <div class="container-fluid app-shell g-0">
+      <div class="row g-0">
+
+        <!-- Sidebar -->
+        <aside class="col-md-3 col-lg-2 sidebar-app border-end">
+          <div class="sidebar-head small text-uppercase text-muted px-3 pt-4 pb-2">Menú</div>
+          <ul class="nav flex-column sidebar-menu px-2 pb-4">
+            <li @click="vista='inicio'" :class="{active: vista==='inicio'}">Inicio</li>
+            <li
+              v-if="esEstudiante"
+              @click="irNuevaPregunta"
+              :class="{active: vista==='pregunta'}"
+            >
+              Haz pregunta
+            </li>
+            <li
+              v-if="esModerador"
+              @click="vista='etiquetas'; cargarTagsCatalogo()"
+              :class="{active: vista==='etiquetas'}"
+            >
+              Etiquetas
+            </li>
+            <li
+              v-if="esEstudiante || esProfesor || esModerador || esSuperAdmin"
+              @click="irAula"
+              :class="{active: vista==='aula'}"
+            >
+              Aula (tareas)
+            </li>
+            <li
+              v-if="currentUser"
+              @click="irDepuracion"
+              :class="{active: vista==='depuracion'}"
+            >
+              Depuración lógica
+            </li>
+            <li
+              v-if="esSuperAdmin"
+              @click="vista='usuariosGlobales'; cargarUsuariosGlobales()"
+              :class="{active: vista==='usuariosGlobales'}"
+            >
+              Usuarios (supremo)
+            </li>
+            <li
+              @click="vista='perfil'; rellenarPerfilForm()"
+              :class="{active: vista==='perfil'}"
+            >
+              Editar perfil
+            </li>
+          </ul>
+        </aside>
+
+        <!-- Contenido -->
+        <main class="col-md-9 col-lg-10 content-app">
+
+          <div v-if="vista==='inicio'" class="view-panel view-panel--preguntas">
+            <div class="view-panel-header text-center mb-3 mx-auto" style="max-width: 28rem">
+              <h3 class="view-panel-title mb-1">Preguntas</h3>
+              <p class="view-panel-sub small mb-0">Foro de dudas y debate</p>
+            </div>
+            <div class="preguntas-toolbar preguntas-toolbar--row mb-4 mx-auto" style="max-width: 40rem">
+              <input v-model="filtroTag" class="form-control flex-grow-1 min-w-0" placeholder="Filtrar por etiqueta (ej: python)">
+              <button class="btn btn-outline-secondary flex-shrink-0" type="button" @click="cargarPreguntas(1)">Filtrar</button>
+            </div>
+            <div v-if="preguntas.length === 0" class="empty-state text-center py-5 px-3 rounded-3 mb-3">
+              <p class="mb-0 text-secondary">No hay preguntas para mostrar.</p>
+            </div>
+            <div v-for="p in preguntas" :key="p.id" class="question-card">
+              <div class="d-flex align-items-start gap-2 mb-2">
+                <img
+                  v-if="p.autor_avatar_url"
+                  :src="p.autor_avatar_url"
+                  alt=""
+                  class="rounded-circle mt-1 flex-shrink-0"
+                  width="40"
+                  height="40"
+                >
+                <div class="flex-grow-1 min-w-0">
+                  <h5 class="mb-2">{{p.titulo}}</h5>
+                  <p class="mb-0" v-html="renderMarkdown(p.contenido)"></p>
+                </div>
+              </div>
+              <div v-if="p.tags && p.tags.length" class="mb-2">
+                <span v-for="tag in p.tags" :key="tag" class="badge text-bg-secondary me-1">#{{ tag }}</span>
+              </div>
+              <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                <button
+                  class="btn btn-sm btn-outline-success"
+                  :disabled="!!(currentUser && votosPreguntas[p.id]?.mi_voto)"
+                  @click="votarPregunta(p.id, 'upvote')"
+                >▲</button>
+                <button
+                  class="btn btn-sm btn-outline-danger"
+                  :disabled="!!(currentUser && votosPreguntas[p.id]?.mi_voto)"
+                  @click="votarPregunta(p.id, 'downvote')"
+                >▼</button>
+                <span class="small">Score: {{ votosPreguntas[p.id]?.score ?? 0 }}</span>
+                <span v-if="currentUser && votosPreguntas[p.id]?.mi_voto" class="small text-muted">
+                  Ya votaste ({{ votosPreguntas[p.id].mi_voto === 'upvote' ? 'positivo' : 'negativo' }}).
+                </span>
+              </div>
+
+              <div v-if="esModerador" class="admin-actions mt-2">
+                <button
+                  class="icon-btn icon-btn-edit"
+                  title="Editar pregunta"
+                  aria-label="Editar pregunta"
+                  @click="editarPreguntaComoAdmin(p)"
+                >
+                  ✏️
+                </button>
+                <button
+                  class="icon-btn icon-btn-delete"
+                  title="Eliminar pregunta"
+                  aria-label="Eliminar pregunta"
+                  @click="eliminarPreguntaComoAdmin(p.id)"
+                >
+                  🗑️
+                </button>
+              </div>
+
+              <div class="answers-box">
+                <h6 class="answers-title">Respuestas</h6>
+                <div
+                  v-if="!respuestasPorPregunta[p.id] || respuestasPorPregunta[p.id].length === 0"
+                  class="text-muted small"
+                >
+                  Aún no hay respuestas.
+                </div>
+
+                <div
+                  v-for="r in respuestasPorPregunta[p.id]"
+                  :key="r.id"
+                  class="answer-item d-flex gap-2 align-items-start"
+                >
+                  <img
+                    v-if="r.autor_avatar_url"
+                    :src="r.autor_avatar_url"
+                    alt=""
+                    class="rounded-circle flex-shrink-0 mt-1"
+                    width="32"
+                    height="32"
+                  >
+                  <div class="flex-grow-1 min-w-0">
+                    <div v-html="renderMarkdown(r.contenido)"></div>
+                  <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
+                    <button
+                      class="btn btn-sm btn-outline-success"
+                      :disabled="!!(currentUser && votosRespuestas[r.id]?.mi_voto)"
+                      @click="votarRespuesta(r.id, 'upvote')"
+                    >▲</button>
+                    <button
+                      class="btn btn-sm btn-outline-danger"
+                      :disabled="!!(currentUser && votosRespuestas[r.id]?.mi_voto)"
+                      @click="votarRespuesta(r.id, 'downvote')"
+                    >▼</button>
+                    <span class="small">Score: {{ votosRespuestas[r.id]?.score ?? 0 }}</span>
+                    <span v-if="currentUser && votosRespuestas[r.id]?.mi_voto" class="small text-muted">
+                      Ya votaste.
+                    </span>
+                  </div>
+                  <div v-if="esModerador" class="admin-actions mt-2">
+                    <button
+                      class="icon-btn icon-btn-edit"
+                      title="Editar respuesta"
+                      aria-label="Editar respuesta"
+                      @click="editarRespuestaComoAdmin(r)"
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      class="icon-btn icon-btn-delete"
+                      title="Eliminar respuesta"
+                      aria-label="Eliminar respuesta"
+                      @click="eliminarRespuestaComoAdmin(r.id)"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="esProfesor" class="mt-2">
+                <button @click="toggleResponder(p.id)" class="btn btn-sm btn-outline-primary">
+                  {{ respondiendoPreguntaId === p.id ? 'Cancelar' : 'Responder' }}
+                </button>
+              </div>
+
+              <div v-if="esProfesor && respondiendoPreguntaId === p.id" class="mt-2">
+                <textarea
+                  v-model="borradorRespuesta"
+                  class="form-control mb-2"
+                  placeholder="Escribe tu respuesta"
+                ></textarea>
+                <button @click="enviarRespuesta(p.id)" class="btn btn-primary btn-sm">
+                  Publicar respuesta
+                </button>
+              </div>
+
+              <div class="mt-3 preguntas-comentarios-block">
+                <h6 class="answers-title">Comentarios</h6>
+                <div
+                  v-for="c in comentariosPorPregunta[p.id] || []"
+                  :key="c.id"
+                  class="pregunta-comentario-row d-flex gap-2 align-items-start small mb-2"
+                >
+                  <img
+                    v-if="c.avatar_url"
+                    :src="c.avatar_url"
+                    alt=""
+                    class="rounded-circle flex-shrink-0 mt-1"
+                    width="24"
+                    height="24"
+                  >
+                  <div>
+                    <strong>{{ c.autor || 'Usuario' }}:</strong> {{ c.contenido }}
+                  </div>
+                </div>
+                <div v-if="currentUser" class="d-flex gap-2 mt-2">
+                  <input v-model="comentarioDraft[p.id]" class="form-control form-control-sm" placeholder="Escribe un comentario">
+                  <button class="btn btn-sm btn-outline-primary" @click="comentarPregunta(p.id)">Comentar</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="preguntas-pager d-flex justify-content-between align-items-center mt-4 px-2 py-3 rounded-3 mx-auto" style="max-width: 36rem">
+              <button class="btn btn-outline-secondary btn-sm" type="button" :disabled="page<=1" @click="cargarPreguntas(page-1)">Anterior</button>
+              <span class="small text-secondary fw-medium">Página {{ page }} de {{ totalPages }}</span>
+              <button class="btn btn-outline-secondary btn-sm" type="button" :disabled="page>=totalPages" @click="cargarPreguntas(page+1)">Siguiente</button>
+            </div>
+          </div>
+
+          <div v-if="vista==='aula' && (esEstudiante || esProfesor || esModerador || esSuperAdmin)" class="view-panel view-panel--aula">
+            <div class="view-panel-header text-center mb-3 mx-auto" style="max-width: 28rem">
+              <h3 class="view-panel-title mb-1">Aula — tareas</h3>
+              <p class="view-panel-sub small mb-0">Entregas y conversación con el curso</p>
+            </div>
+            <p class="page-lead page-lead--centered small mb-4 text-center mx-auto">
+              El profesor publica tareas, define fecha limite, comenta en la tarea y califica entregas. El estudiante sube un archivo por tarea (al volver a subir se reemplaza el archivo; la nota y el comentario del profesor se conservan).
+              <span v-if="esModerador">Los administradores pueden moderar cualquier tarea, fechas y comentarios (incluidos privados).</span>
+              <span v-if="esSuperAdmin">El administrador supremo puede usar el aula como profesor, estudiante y moderador.</span>
+            </p>
+
+            <div v-if="esProfesorEnAula" class="card mb-4 p-4 aula-form-card border-0 mx-auto" style="max-width: 40rem">
+              <h5 class="mb-3 aula-form-title">Publicar nueva tarea</h5>
+              <input v-model="aulaNueva.titulo" class="form-control mb-2" placeholder="Titulo de la tarea">
+              <textarea v-model="aulaNueva.descripcion" class="form-control mb-2" rows="3" placeholder="Instrucciones (admite Markdown)"></textarea>
+              <label class="form-label small">Fecha limite de entrega (opcional)</label>
+              <input v-model="aulaNueva.fecha_entrega" type="datetime-local" class="form-control mb-3">
+              <button type="button" class="btn btn-primary" @click="publicarTareaAula">Publicar tarea</button>
+            </div>
+
+            <div v-if="aulaEntregasDe !== null && esProfesorEnAula && !aulaEntregasEsModeracion" class="card mb-4 p-4 aula-subpanel border-0">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h5 class="mb-0">Entregas</h5>
+                <button type="button" class="btn btn-sm btn-outline-secondary" @click="cerrarEntregasAula">Cerrar</button>
+              </div>
+              <div v-if="!aulaEntregasLista.length" class="text-muted small">Nadie ha entregado aun.</div>
+              <div v-else class="table-responsive">
+                <table class="table table-sm table-bordered bg-white mb-0">
+                  <thead>
+                    <tr>
+                      <th>Estudiante</th>
+                      <th>Archivo</th>
+                      <th>Entrega</th>
+                      <th>Nota (0-10)</th>
+                      <th>Feedback</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="e in aulaEntregasLista" :key="e.id">
+                      <td>{{ e.estudiante_nombre }}</td>
+                      <td>{{ e.filename_original }}</td>
+                      <td class="small">{{ e.fecha_subida }}</td>
+                      <td style="min-width: 90px">
+                        <input
+                          v-if="aulaGradesDraft[e.id]"
+                          v-model="aulaGradesDraft[e.id].nota"
+                          type="text"
+                          class="form-control form-control-sm"
+                          placeholder="—"
+                        >
+                      </td>
+                      <td style="min-width: 160px">
+                        <textarea
+                          v-if="aulaGradesDraft[e.id]"
+                          v-model="aulaGradesDraft[e.id].comentario"
+                          class="form-control form-control-sm"
+                          rows="2"
+                          placeholder="Comentario al estudiante"
+                        ></textarea>
+                      </td>
+                      <td class="text-nowrap">
+                        <a class="btn btn-sm btn-outline-primary mb-1" :href="aulaDownloadUrl(e.id)">Descargar</a>
+                        <button type="button" class="btn btn-sm btn-primary mb-1 d-block" @click="guardarCalificacionAula(e)">Guardar</button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div v-if="aulaEntregasDe !== null && esModerador && aulaEntregasEsModeracion" class="card mb-4 p-4 aula-subpanel aula-subpanel--admin border-0">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h5 class="mb-0">Entregas (vista administrador)</h5>
+                <button type="button" class="btn btn-sm btn-outline-secondary" @click="cerrarEntregasAula">Cerrar</button>
+              </div>
+              <div v-if="!aulaEntregasLista.length" class="text-muted small">Nadie ha entregado aun.</div>
+              <div v-else class="table-responsive">
+                <table class="table table-sm table-bordered bg-white mb-0">
+                  <thead>
+                    <tr>
+                      <th>Estudiante</th>
+                      <th>Archivo</th>
+                      <th>Entrega</th>
+                      <th>Nota</th>
+                      <th>Feedback del profesor</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="e in aulaEntregasLista" :key="e.id">
+                      <td>{{ e.estudiante_nombre }}</td>
+                      <td>{{ e.filename_original }}</td>
+                      <td class="small">{{ e.fecha_subida }}</td>
+                      <td class="small">{{ e.nota != null && e.nota !== '' ? e.nota : '—' }}</td>
+                      <td class="small text-muted">{{ e.comentario_profesor || '—' }}</td>
+                      <td>
+                        <a class="btn btn-sm btn-outline-primary" :href="aulaDownloadUrl(e.id)">Descargar</a>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div v-if="!aulaTareas.length" class="empty-state text-center py-5 px-3 rounded-3 mb-3">No hay tareas publicadas.</div>
+            <div v-for="t in aulaTareas" :key="t.id" class="card mb-4 aula-task-card border-0 overflow-hidden">
+              <div class="aula-task-head px-4 py-3 d-flex justify-content-between gap-2 flex-wrap">
+                <div class="flex-grow-1 min-w-0">
+                  <h5 class="mb-1 fw-bold">{{ t.titulo }}</h5>
+                  <p class="aula-task-meta small mb-1">Profesor: <strong>{{ t.profesor_nombre }}</strong></p>
+                  <p v-if="t.fecha_entrega" class="small mb-0 aula-task-due">
+                    <span class="aula-due-pill">Fecha límite</span>
+                    {{ formatFechaHumana(t.fecha_entrega) }}
+                  </p>
+                  <p v-else class="small aula-task-meta mb-2">Sin fecha límite indicada.</p>
+                  <div v-if="t.descripcion" class="aula-task-body small mt-2" v-html="renderMarkdown(t.descripcion)"></div>
+                </div>
+                <div class="text-end flex-shrink-0">
+                  <span v-if="t.entregas_count !== undefined" class="badge aula-badge-entregas">Entregas: {{ t.entregas_count }}</span>
+                </div>
+              </div>
+
+              <div class="aula-comments px-4 py-3 small">
+                <div class="aula-comments-title mb-3">Comentarios en el aula</div>
+                <div
+                  v-for="c in (aulaComentariosPorTarea[t.id] || [])"
+                  :key="c.id"
+                  class="aula-comment mb-2 py-2 px-3 rounded-3"
+                  :class="{ 'aula-comment--reply ms-2 ms-md-4': c.parent_id }"
+                >
+                  <span class="aula-comment-author">{{ c.autor_nombre }}</span>
+                  <span v-if="c.is_private" class="badge rounded-pill bg-warning text-dark ms-1">Privado</span>
+                  <span class="aula-comment-date small">· {{ formatFechaHumana(c.fecha_creacion) }}</span>
+                  <div class="aula-comment-text mt-1">{{ c.contenido }}</div>
+                  <button
+                    v-if="currentUser && ((esEstudianteEnAula && !esProfesorEnAula) || (esProfesorEnAula && aulaDocenteDeTarea(t)))"
+                    type="button"
+                    class="btn btn-sm btn-link aula-btn-reply px-0 mt-1"
+                    @click="iniciarRespuestaAula(t.id, c)"
+                  >Responder</button>
+                  <span v-if="esModerador" class="ms-2">
+                    <button type="button" class="btn btn-link btn-sm p-0 text-secondary" @click="editarComentarioAulaAdmin(t, c)">Editar</button>
+                    <button type="button" class="btn btn-link btn-sm p-0 text-danger" @click="eliminarComentarioAulaAdmin(t, c)">Eliminar</button>
+                  </span>
+                </div>
+                <p v-if="!(aulaComentariosPorTarea[t.id] || []).length" class="text-muted small mb-0">Sin comentarios aun.</p>
+              </div>
+
+              <div
+                v-if="aulaReplyAssignmentId === t.id && aulaReplyParentId && currentUser"
+                class="aula-reply-panel mx-4 mb-3 p-3 small rounded-3"
+              >
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                  <span class="fw-semibold text-primary">Respondiendo a un comentario</span>
+                  <button type="button" class="btn btn-sm btn-outline-secondary py-0" @click="cancelarRespuestaAula">Cancelar</button>
+                </div>
+                <template v-if="esProfesorEnAula && aulaDocenteDeTarea(t)">
+                  <label class="form-label mb-1">Tu respuesta (visible segun reglas del aula)</label>
+                  <textarea
+                    v-model="aulaComentarioDraft[t.id]"
+                    class="form-control form-control-sm mb-2"
+                    rows="3"
+                    placeholder="Escribe la respuesta..."
+                  ></textarea>
+                  <button type="button" class="btn btn-sm btn-primary" @click="publicarComentarioAula(t)">Publicar respuesta</button>
+                </template>
+                <template v-else-if="esEstudianteEnAula">
+                  <label class="form-label mb-1">Tu respuesta</label>
+                  <textarea
+                    v-model="borradorEstudianteAula(t.id).texto"
+                    class="form-control form-control-sm mb-2"
+                    rows="3"
+                    placeholder="Escribe tu respuesta..."
+                  ></textarea>
+                  <div class="form-check mb-2">
+                    <input
+                      :id="'priv-reply-'+t.id"
+                      v-model="borradorEstudianteAula(t.id).privado"
+                      class="form-check-input"
+                      type="checkbox"
+                    >
+                    <label class="form-check-label" :for="'priv-reply-'+t.id">Privado (solo tu y el profesor)</label>
+                  </div>
+                  <button type="button" class="btn btn-sm btn-primary" @click="publicarComentarioEstudianteAula(t)">Publicar respuesta</button>
+                </template>
+              </div>
+
+              <div v-if="esProfesorEnAula && aulaDocenteDeTarea(t)" class="aula-task-actions mt-0 px-4 py-3 border-top">
+                <label class="form-label small mb-1">Cambiar fecha limite de entrega</label>
+                <div class="d-flex flex-wrap gap-2 align-items-end">
+                  <input
+                    type="datetime-local"
+                    class="form-control form-control-sm"
+                    style="max-width: 220px"
+                    :value="formatDatetimeLocal(t.fecha_entrega)"
+                    @change="actualizarFechaEntregaAula(t, $event)"
+                  >
+                  <button type="button" class="btn btn-sm btn-outline-secondary" @click="quitarFechaEntregaAula(t)">Quitar fecha limite</button>
+                </div>
+                <div class="mt-2" v-show="!(aulaReplyAssignmentId === t.id && aulaReplyParentId)">
+                  <label class="form-label small mb-1">Tu comentario (visible para quien corresponda)</label>
+                  <div class="d-flex flex-wrap gap-2">
+                    <input v-model="aulaComentarioDraft[t.id]" type="text" class="form-control form-control-sm" style="min-width: 200px" placeholder="Comentario publico en la tarea">
+                    <button type="button" class="btn btn-sm btn-outline-primary" @click="publicarComentarioAula(t)">Publicar</button>
+                  </div>
+                </div>
+                <div class="mt-2 d-flex flex-wrap gap-2">
+                  <button type="button" class="btn btn-sm btn-outline-primary" @click="verEntregasAula(t)">Ver entregas</button>
+                  <button type="button" class="btn btn-sm btn-outline-danger" @click="eliminarTareaAula(t)">Eliminar tarea</button>
+                </div>
+              </div>
+
+              <div v-if="esModerador" class="aula-task-actions mt-0 px-4 py-3 border-top">
+                <div class="fw-semibold small text-secondary mb-2">Moderacion (administrador)</div>
+                <label class="form-label small mb-1">Cambiar fecha limite de entrega</label>
+                <div class="d-flex flex-wrap gap-2 align-items-end mb-2">
+                  <input
+                    type="datetime-local"
+                    class="form-control form-control-sm"
+                    style="max-width: 220px"
+                    :value="formatDatetimeLocal(t.fecha_entrega)"
+                    @change="moderarFechaEntregaAulaAdmin(t, $event)"
+                  >
+                  <button type="button" class="btn btn-sm btn-outline-secondary" @click="quitarFechaEntregaAulaAdmin(t)">Quitar fecha limite</button>
+                </div>
+                <div class="d-flex flex-wrap gap-2 mb-2">
+                  <button type="button" class="btn btn-sm btn-outline-secondary" @click="moderarTituloDescAulaAdmin(t)">Editar titulo y descripcion</button>
+                  <button type="button" class="btn btn-sm btn-outline-primary" @click="verEntregasAulaAdmin(t)">Ver entregas</button>
+                  <button type="button" class="btn btn-sm btn-outline-danger" @click="eliminarTareaAulaAdmin(t)">Eliminar tarea</button>
+                </div>
+              </div>
+
+              <div v-if="esEstudianteEnAula" class="aula-task-actions mt-0 px-4 py-3 border-top">
+                <div v-if="t.mi_nota != null && t.mi_nota !== ''" class="small mb-1">
+                  <strong>Nota:</strong> {{ t.mi_nota }} / 10
+                </div>
+                <div v-if="t.mi_comentario_profesor" class="small mb-2 text-muted">
+                  <strong>Comentario del profesor:</strong> {{ t.mi_comentario_profesor }}
+                </div>
+                <div class="mb-3" v-show="!(aulaReplyAssignmentId === t.id && aulaReplyParentId)">
+                  <label class="form-label small mb-1">Tu mensaje en el aula</label>
+                  <textarea
+                    v-model="borradorEstudianteAula(t.id).texto"
+                    class="form-control form-control-sm mb-2"
+                    rows="2"
+                    placeholder="Escribe un comentario o respuesta"
+                  ></textarea>
+                  <div class="form-check mb-2">
+                    <input
+                      :id="'priv-'+t.id"
+                      v-model="borradorEstudianteAula(t.id).privado"
+                      class="form-check-input"
+                      type="checkbox"
+                    >
+                    <label class="form-check-label small" :for="'priv-'+t.id">Privado (solo tu y el profesor lo ven)</label>
+                  </div>
+                  <button type="button" class="btn btn-sm btn-primary" @click="publicarComentarioEstudianteAula(t)">Publicar</button>
+                </div>
+                <div v-if="t.mi_submission_id" class="mb-2 small text-success">
+                  Archivo entregado: {{ t.mi_archivo }}
+                  <a class="btn btn-sm btn-link p-0 ms-1" :href="aulaDownloadUrl(t.mi_submission_id)">Descargar</a>
+                  <span class="text-muted">({{ t.mi_fecha }})</span>
+                </div>
+                <label class="form-label small mb-1">Subir o actualizar entrega</label>
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                  <input
+                    type="file"
+                    class="form-control form-control-sm"
+                    style="max-width: 280px"
+                    @change="subirEntregaAula(t.id, $event)"
+                  >
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="vista==='depuracion' && currentUser" class="view-panel view-panel--depuracion">
+            <div class="view-panel-header text-center mb-3 mx-auto" style="max-width: 32rem">
+              <h3 class="view-panel-title mb-1">Depuración lógica — Login</h3>
+              <p class="view-panel-sub small mb-0">
+                Comprueba correo y contraseña contra la base de datos (misma lógica que al ingresar al foro).
+              </p>
+            </div>
+
+            <div class="depuracion-panel mx-auto">
+              <div class="card depuracion-form-card border-0 p-4 mb-3">
+                <label class="form-label small mb-1">Correo</label>
+                <input v-model="depuracionCorreo" type="email" class="form-control mb-2" placeholder="correo@ejemplo.com" autocomplete="username" @keyup.enter="analizarDepuracion">
+                <label class="form-label small mb-1">Contraseña</label>
+                <input v-model="depuracionPassword" type="password" class="form-control mb-2" autocomplete="current-password" @keyup.enter="analizarDepuracion">
+                <p class="small text-muted mb-3">Usa un usuario registrado en el foro (no inicia sesión, solo analiza).</p>
+                <button type="button" class="btn btn-primary w-100" @click="analizarDepuracion">
+                  Analizar login
+                </button>
+              </div>
+
+              <div
+                v-if="depuracionDiagnostico && depuracionDiagnostico.premisa_1"
+                class="auth-diagnostico rounded-3 p-3"
+                :class="'auth-diagnostico--' + (depuracionDiagnostico.regla || 'info')"
+              >
+                <p class="auth-diagnostico-titulo fw-semibold small mb-2">{{ depuracionDiagnosticoTitulo }}</p>
+                <p class="small mb-1"><span class="text-muted">Premisa 1:</span> {{ depuracionDiagnostico.premisa_1 }}</p>
+                <p class="small mb-1"><span class="text-muted">Premisa 2:</span> {{ depuracionDiagnostico.premisa_2 }}</p>
+                <p class="small mb-0"><span class="text-muted">Conclusión:</span> {{ depuracionDiagnostico.conclusion }}</p>
+              </div>
+            </div>
+          </div>
+
+          <div
+            v-if="vista==='pregunta' && esEstudiante"
+            class="view-panel view-panel--form content-narrow mx-auto"
+          >
+            <div class="view-panel-header text-center mb-4 pb-3 border-bottom mx-auto" style="max-width: 24rem">
+              <h3 class="view-panel-title mb-1">Nueva pregunta</h3>
+              <p class="view-panel-sub small mb-0">Comparte una duda con título claro y etiquetas útiles</p>
+            </div>
+            <label class="form-label small text-secondary mb-1">Título</label>
+            <input v-model="nueva.titulo" class="form-control mb-3" placeholder="Título">
+            <label class="form-label small text-secondary mb-1">Descripción</label>
+            <textarea v-model="nueva.descripcion" class="form-control mb-3" rows="5" placeholder="Describe tu pregunta"></textarea>
+            <label class="form-label small text-secondary mb-1">Etiquetas</label>
+            <p class="small text-muted mb-2">Elige del catálogo o escribe nuevas; se guardarán al publicar la pregunta.</p>
+            <div class="d-flex flex-wrap gap-2 mb-2">
+              <button
+                v-for="t in tagsCatalogo"
+                :key="t.id"
+                type="button"
+                class="btn btn-sm rounded-pill"
+                :class="nueva.tagsSeleccionados.includes(t.nombre) ? 'btn-primary' : 'btn-outline-secondary'"
+                @click="toggleTagSeleccion(t.nombre)"
+              >
+                {{ t.nombre }}
+              </button>
+            </div>
+            <p v-if="tagsCatalogo.length === 0" class="small text-muted mb-2">Aún no hay etiquetas en el foro; puedes crearlas escribiendo abajo.</p>
+            <label class="form-label small text-secondary mb-1">Añadir etiqueta nueva</label>
+            <div class="input-group mb-2">
+              <input
+                v-model="tagBorrador"
+                class="form-control"
+                placeholder="Una o varias separadas por coma (ej: math, álgebra)"
+                @keyup.enter="anadirTagPersonalizada"
+              >
+              <button type="button" class="btn btn-outline-secondary" @click="anadirTagPersonalizada">Añadir</button>
+            </div>
+            <div v-if="nueva.tagsSeleccionados.length" class="mb-4">
+              <div class="small text-secondary mb-1">Seleccionadas</div>
+              <div class="d-flex flex-wrap gap-2 align-items-center">
+                <span
+                  v-for="tag in nueva.tagsSeleccionados"
+                  :key="tag"
+                  class="badge rounded-pill text-bg-primary d-inline-flex align-items-center gap-1 py-2 px-3"
+                >
+                  {{ tag }}
+                  <button
+                    type="button"
+                    class="btn btn-link btn-sm text-white p-0 lh-1 border-0 align-middle"
+                    style="text-decoration: none; font-size: 1rem; line-height: 1"
+                    title="Quitar"
+                    @click="quitarTagSel(tag)"
+                  >
+                    ×
+                  </button>
+                </span>
+              </div>
+            </div>
+            <div v-else class="mb-4"></div>
+            <div class="d-flex justify-content-end pt-1">
+              <button type="button" @click="agregarPregunta" class="btn btn-primary px-4">Publicar</button>
+            </div>
+          </div>
+
+          <div
+            v-if="vista==='etiquetas' && esModerador"
+            class="view-panel content-narrow mx-auto"
+            style="max-width: 42rem"
+          >
+            <div class="view-panel-header text-center mb-4 pb-3 border-bottom mx-auto" style="max-width: 28rem">
+              <h3 class="view-panel-title mb-1">Gestión de etiquetas</h3>
+              <p class="view-panel-sub small mb-0">Crear, renombrar o eliminar etiquetas del foro para moderar el vocabulario.</p>
+            </div>
+            <div class="d-flex flex-wrap gap-2 mb-4 align-items-end">
+              <div class="flex-grow-1" style="min-width: 12rem">
+                <label class="form-label small text-secondary mb-1">Nueva etiqueta</label>
+                <input
+                  v-model="moderacionTagNueva"
+                  class="form-control"
+                  placeholder="Nombre (único, sin caracteres raros)"
+                  @keyup.enter="guardarNuevoTagModerador"
+                >
+              </div>
+              <button type="button" class="btn btn-primary mb-1" @click="guardarNuevoTagModerador">Crear</button>
+            </div>
+            <div class="table-responsive mb-3">
+              <table class="table table-sm table-striped align-middle">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Nombre</th>
+                    <th class="text-end">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="t in tagsCatalogo" :key="t.id">
+                    <td>{{ t.id }}</td>
+                    <td>{{ t.nombre }}</td>
+                    <td class="text-end text-nowrap">
+                      <button type="button" class="btn btn-sm btn-outline-secondary me-1" @click="renombrarTagModer(t)">Renombrar</button>
+                      <button type="button" class="btn btn-sm btn-outline-danger" @click="eliminarTagModer(t)">Eliminar</button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p v-if="tagsCatalogo.length === 0" class="text-secondary small text-center mb-0">No hay etiquetas registradas.</p>
+          </div>
+
+          <div v-if="vista==='contacto'" class="view-panel view-panel--form content-narrow mx-auto">
+            <div class="view-panel-header text-center mb-4 pb-3 border-bottom mx-auto" style="max-width: 22rem">
+              <h3 class="view-panel-title mb-1">Contacto</h3>
+              <p class="view-panel-sub small mb-0">Envía un mensaje al equipo</p>
+            </div>
+            <label class="form-label small text-secondary mb-1">Nombre</label>
+            <input v-model="contacto.nombre" class="form-control mb-3" placeholder="Nombre">
+            <label class="form-label small text-secondary mb-1">Mensaje</label>
+            <textarea v-model="contacto.mensaje" class="form-control mb-4" rows="5" placeholder="Escribe tu mensaje"></textarea>
+            <div class="d-flex justify-content-end">
+              <button type="button" @click="enviarContacto" class="btn btn-primary px-4">Enviar</button>
+            </div>
+          </div>
+
+          <div v-if="vista==='perfil'" class="view-panel view-panel--form content-narrow content-narrow--perfil mx-auto">
+            <div class="view-panel-header text-center mb-4 pb-3 border-bottom mx-auto" style="max-width: 26rem">
+              <h3 class="view-panel-title mb-1">Editar perfil</h3>
+              <p class="view-panel-sub small mb-0">
+                Rol actual: <strong>{{ currentUser?.rol }}</strong> (no se puede cambiar aquí).
+              </p>
+            </div>
+            <div class="mb-4 d-flex flex-column flex-sm-row flex-wrap align-items-center justify-content-center gap-3 text-center text-sm-start">
+              <img
+                v-if="perfilAvatarPreview || (currentUser && currentUser.avatar_url)"
+                :src="perfilAvatarPreview || (currentUser.avatar_url + (avatarCacheBust ? '?t=' + avatarCacheBust : ''))"
+                alt=""
+                class="rounded-circle border"
+                width="96"
+                height="96"
+              >
+              <div class="small text-muted perfil-avatar-hint">
+                Vista previa. Sin foto propia se usa Gravatar según tu correo.
+                Si eliges un archivo, puedes subirlo con «Guardar foto elegida» o también se sube al pulsar «Guardar cambios».
+              </div>
+            </div>
+            <label class="form-label small text-secondary mb-1">Cambiar foto de perfil</label>
+            <input
+              ref="perfilAvatarInput"
+              type="file"
+              class="form-control mb-2"
+              accept="image/jpeg,image/png,image/webp"
+              @change="onPerfilAvatarSeleccionado"
+            >
+            <div class="d-flex flex-wrap justify-content-center justify-content-sm-start gap-2 mb-4">
+              <button type="button" class="btn btn-outline-dark" @click="subirFotoPerfil" :disabled="!perfilAvatarFile">
+                Guardar foto elegida
+              </button>
+              <button type="button" class="btn btn-outline-secondary" @click="quitarFotoPerfil">
+                Quitar foto (Gravatar)
+              </button>
+            </div>
+            <hr class="my-4">
+            <label class="form-label small text-secondary mb-1">Nombre</label>
+            <input v-model="perfilForm.nombre" class="form-control mb-3" placeholder="Nombre">
+            <label class="form-label small text-secondary mb-1">Correo</label>
+            <input v-model="perfilForm.email" type="email" class="form-control mb-3" placeholder="Correo">
+            <label class="form-label small text-secondary mb-1">Contraseña</label>
+            <input
+              v-model="perfilForm.password"
+              type="password"
+              class="form-control mb-4"
+              placeholder="Nueva contraseña (opcional, mín. 6 caracteres)"
+              autocomplete="new-password"
+            >
+            <div class="d-flex justify-content-end">
+              <button type="button" @click="guardarPerfil" class="btn btn-primary px-4">Guardar cambios</button>
+            </div>
+          </div>
+
+          <div v-if="vista==='usuariosGlobales' && esSuperAdmin" class="view-panel view-panel--admin">
+            <div class="view-panel-header text-center mb-4 mx-auto" style="max-width: 32rem">
+              <h3 class="view-panel-title mb-1">Gestión de usuarios</h3>
+              <p class="view-panel-sub small mb-0">Edita perfiles, roles y contraseñas de cualquier usuario.</p>
+            </div>
+            <div class="d-flex flex-wrap justify-content-center justify-content-md-end mb-3">
+              <button type="button" class="btn btn-primary btn-sm" @click="abrirCreacionUsuario">Nuevo usuario</button>
+            </div>
+            <div class="table-responsive mb-4">
+              <table class="table table-sm table-striped align-middle">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Nombre</th>
+                    <th>Email</th>
+                    <th>Rol</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="u in usuariosGlobales" :key="u.id">
+                    <td>{{ u.id }}</td>
+                    <td>{{ u.nombre }}</td>
+                    <td>{{ u.email }}</td>
+                    <td><code>{{ u.rol }}</code></td>
+                    <td>
+                      <button type="button" class="btn btn-sm btn-outline-primary me-1" @click="abrirEdicionUsuario(u)">Editar</button>
+                      <button
+                        v-if="u.id !== currentUser?.id"
+                        type="button"
+                        class="btn btn-sm btn-outline-danger"
+                        @click="eliminarUsuarioSuper(u.id)"
+                      >Eliminar</button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div v-if="superUsuarioFormActivo" class="card p-3 border-primary mx-auto mb-3" style="max-width: 28rem">
+              <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+                <h5 class="mb-0">
+                  <span v-if="superEsCreacion">Nuevo usuario</span>
+                  <span v-else>Editar usuario #{{ superEdit.id }}</span>
+                </h5>
+                <button type="button" class="btn-close" aria-label="Cerrar" @click="cerrarFormSuperUsuario"></button>
+              </div>
+              <label class="form-label small mb-1">Nombre</label>
+              <input v-model="superEdit.nombre" class="form-control mb-2" placeholder="Nombre">
+              <label class="form-label small mb-1">Correo</label>
+              <input v-model="superEdit.email" type="email" class="form-control mb-2" placeholder="Correo">
+              <label class="form-label small mb-1">Contraseña</label>
+              <input v-model="superEdit.password" type="password" class="form-control mb-2" :placeholder="superEsCreacion ? 'Contraseña (obligatoria, mín. 6 caracteres)' : 'Nueva contraseña (opcional)'">
+              <label class="form-label small">Rol</label>
+              <select v-model="superEdit.rol" class="form-select mb-3">
+                <option value="estudiante">estudiante</option>
+                <option value="profesor">profesor</option>
+                <option value="admin">admin</option>
+                <option value="superadmin">superadmin</option>
+              </select>
+              <div class="d-flex flex-wrap justify-content-end gap-2">
+                <button type="button" class="btn btn-outline-secondary" @click="cerrarFormSuperUsuario">Cancelar</button>
+                <button type="button" class="btn btn-primary" @click="guardarUsuarioSuper">{{ superEsCreacion ? 'Crear usuario' : 'Guardar usuario' }}</button>
+              </div>
+            </div>
+          </div>
+
+        </main>
+
+      </div>
+    </div>
+
+  </div>
+
+  <teleport to="body">
+    <div
+      v-if="appModal.visible"
+      class="app-modal-backdrop"
+      aria-modal="true"
+      role="dialog"
+      @click.self="modalCancelar"
+    >
+      <div class="app-modal-panel card border-0 shadow-lg">
+        <div class="card-body p-4 p-md-5">
+          <h2 class="h5 fw-semibold mb-3 text-dark">{{ appModal.titulo }}</h2>
+          <p v-if="appModal.tipo !== 'prompt'" class="text-secondary mb-4 modal-msg">{{ appModal.mensaje }}</p>
+          <template v-else>
+            <label class="form-label small text-secondary">{{ appModal.mensaje }}</label>
+            <textarea
+              v-model="appModal.promptValor"
+              class="form-control mb-4"
+              rows="5"
+              autofocus
+            ></textarea>
+          </template>
+          <div class="d-flex flex-wrap justify-content-end gap-2">
+            <button
+              v-if="appModal.tipo === 'confirm' || appModal.tipo === 'prompt'"
+              type="button"
+              class="btn btn-outline-secondary px-4"
+              @click="modalCancelar"
+            >{{ appModal.cancelText }}</button>
+            <button
+              type="button"
+              :class="['btn px-4', appModal.okDanger ? 'btn-danger' : 'btn-primary']"
+              @click="modalAceptar"
+            >{{ appModal.okText }}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </teleport>
+
+</div>
+
+<script src="js/app.js"></script>
+</body>
+</html>
