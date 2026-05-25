@@ -32,12 +32,8 @@
       <h1 class="mb-2 text-white fw-bold display-6">Foro académico</h1>
       <p class="text-white-50 mb-4 px-2">Preguntas, respuestas y aula de tareas en un solo lugar.</p>
 
-      <button @click="pantalla='login'; loginDiagnostico = null" class="btn btn-light btn-lg w-100 mb-3 fw-semibold">
+      <button @click="pantalla='login'; loginDiagnostico = null" class="btn btn-light btn-lg w-100 fw-semibold">
         Ingresar
-      </button>
-
-      <button @click="pantalla='registro'" class="btn btn-outline-light btn-lg w-100">
-        Crear cuenta
       </button>
     </div>
   </div>
@@ -74,29 +70,6 @@
         :disabled="!loginBotonHabilitado"
       >Entrar</button>
       <button @click="pantalla='inicio'; loginDiagnostico = null" class="btn btn-link w-100 text-decoration-none">Volver al inicio</button>
-    </div>
-  </div>
-
-  <!-- REGISTRO -->
-  <div v-if="pantalla === 'registro'" class="auth-page d-flex align-items-center justify-content-center py-5 px-3">
-    <div class="card auth-card border-0 shadow-lg p-4 p-md-5 w-100" style="max-width: 420px">
-      <h4 class="fw-bold mb-1">Crear cuenta</h4>
-      <p class="text-muted small mb-4">Elige tu rol y completa los datos</p>
-
-      <select v-model="rol" class="form-select form-select-lg mb-3">
-        <option disabled value="">Selecciona rol</option>
-        <option value="estudiante">Estudiante</option>
-        <option value="profesor">Profesor</option>
-        <option value="admin">Administrador</option>
-        <option value="superadmin">Administrador supremo</option>
-      </select>
-
-      <input v-model="nombre" class="form-control form-control-lg mb-3" placeholder="Nombre">
-      <input v-model="correo" class="form-control form-control-lg mb-3" placeholder="Correo" autocomplete="email">
-      <input v-model="pass" type="password" class="form-control form-control-lg mb-4" placeholder="Contraseña" autocomplete="new-password">
-
-      <button @click="registrar" class="btn btn-success btn-lg w-100 mb-2 fw-semibold">Registrarse</button>
-      <button @click="pantalla='inicio'" class="btn btn-link w-100 text-decoration-none">Volver al inicio</button>
     </div>
   </div>
 
@@ -137,6 +110,7 @@
           <div class="sidebar-head small text-uppercase text-muted px-3 pt-4 pb-2">Menú</div>
           <ul class="nav flex-column sidebar-menu px-2 pb-4">
             <li @click="vista='inicio'" :class="{active: vista==='inicio'}">Inicio</li>
+            <li @click="irHistorial" :class="{active: vista==='historial'}">Historial</li>
             <li
               v-if="esEstudiante"
               @click="irNuevaPregunta"
@@ -157,13 +131,6 @@
               :class="{active: vista==='aula'}"
             >
               Aula (tareas)
-            </li>
-            <li
-              v-if="currentUser"
-              @click="irDepuracion"
-              :class="{active: vista==='depuracion'}"
-            >
-              Depuración lógica
             </li>
             <li
               v-if="esSuperAdmin"
@@ -193,10 +160,34 @@
               <input v-model="filtroTag" class="form-control flex-grow-1 min-w-0" placeholder="Filtrar por etiqueta (ej: python)">
               <button class="btn btn-outline-secondary flex-shrink-0" type="button" @click="cargarPreguntas(1)">Filtrar</button>
             </div>
+            <div class="translate-bar d-flex flex-wrap align-items-center justify-content-center gap-2 mb-3 mx-auto px-2" style="max-width: 40rem">
+              <span class="small text-muted">Traducir publicaciones a:</span>
+              <select v-model="idiomaTraduccion" class="form-select form-select-sm translate-lang-select">
+                <option value="en">Inglés</option>
+                <option value="es">Español</option>
+                <option value="fr">Francés</option>
+                <option value="pt">Portugués</option>
+                <option value="de">Alemán</option>
+                <option value="it">Italiano</option>
+              </select>
+              <button
+                type="button"
+                class="btn btn-sm btn-primary"
+                :disabled="traduccionGlobalCargando || preguntas.length === 0"
+                @click="alternarTraduccionTodasPublicaciones"
+              >
+                <span v-if="traduccionGlobalCargando">Traduciendo…</span>
+                <span v-else-if="traduccionGlobalActiva">Ver originales</span>
+                <span v-else>Traducir todas</span>
+              </button>
+            </div>
+            <p v-if="traduccionGlobalActiva" class="small text-primary text-center mb-4">
+              Mostrando traducción al {{ etiquetaIdiomaTraduccion(idiomaTraduccion) }} (página actual)
+            </p>
             <div v-if="preguntas.length === 0" class="empty-state text-center py-5 px-3 rounded-3 mb-3">
               <p class="mb-0 text-secondary">No hay preguntas para mostrar.</p>
             </div>
-            <div v-for="p in preguntas" :key="p.id" class="question-card">
+            <div v-for="p in preguntas" :key="p.id" :id="'pregunta-'+p.id" class="question-card">
               <div class="d-flex align-items-start gap-2 mb-2">
                 <img
                   v-if="p.autor_avatar_url"
@@ -207,8 +198,8 @@
                   height="40"
                 >
                 <div class="flex-grow-1 min-w-0">
-                  <h5 class="mb-2">{{p.titulo}}</h5>
-                  <p class="mb-0" v-html="renderMarkdown(p.contenido)"></p>
+                  <h5 class="mb-2">{{ tituloPreguntaMostrado(p) }}</h5>
+                  <p class="mb-0" v-html="renderMarkdown(contenidoPreguntaMostrado(p))"></p>
                 </div>
               </div>
               <div v-if="p.tags && p.tags.length" class="mb-2">
@@ -273,7 +264,7 @@
                     height="32"
                   >
                   <div class="flex-grow-1 min-w-0">
-                    <div v-html="renderMarkdown(r.contenido)"></div>
+                    <div v-html="renderMarkdown(contenidoRespuestaMostrado(r))"></div>
                   <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
                     <button
                       class="btn btn-sm btn-outline-success"
@@ -359,6 +350,54 @@
               <button class="btn btn-outline-secondary btn-sm" type="button" :disabled="page<=1" @click="cargarPreguntas(page-1)">Anterior</button>
               <span class="small text-secondary fw-medium">Página {{ page }} de {{ totalPages }}</span>
               <button class="btn btn-outline-secondary btn-sm" type="button" :disabled="page>=totalPages" @click="cargarPreguntas(page+1)">Siguiente</button>
+            </div>
+          </div>
+
+          <div v-if="vista==='historial'" class="view-panel view-panel--historial">
+            <div class="view-panel-header text-center mb-3 mx-auto" style="max-width: 32rem">
+              <h3 class="view-panel-title mb-1">Historial de preguntas</h3>
+              <p class="view-panel-sub small mb-0">{{ historialSubtitulo }}</p>
+            </div>
+            <div v-if="historialPreguntas.length === 0" class="empty-state text-center py-5 px-3 rounded-3 mb-3">
+              <p class="mb-0 text-secondary">{{ historialVacio }}</p>
+            </div>
+
+            <div v-for="p in historialPreguntas" :key="'hist-'+p.id" class="question-card historial-card">
+              <div class="historial-card-meta d-flex flex-wrap align-items-center gap-2 mb-2">
+                <time class="small text-muted">{{ formatFechaHumana(p.fecha_creacion) }}</time>
+                <span v-if="!esEstudiante && p.autor" class="small text-secondary">· {{ p.autor }}</span>
+                <span class="badge text-bg-light border small">#{{ p.id }}</span>
+              </div>
+              <div class="d-flex align-items-start gap-2 mb-2">
+                <img
+                  v-if="p.autor_avatar_url"
+                  :src="p.autor_avatar_url"
+                  alt=""
+                  class="rounded-circle mt-1 flex-shrink-0"
+                  width="36"
+                  height="36"
+                >
+                <div class="flex-grow-1 min-w-0">
+                  <h5 class="mb-2">{{ p.titulo }}</h5>
+                  <p class="mb-0 small historial-card-excerpt" v-html="renderMarkdown(p.contenido)"></p>
+                </div>
+              </div>
+              <div v-if="p.tags && p.tags.length" class="mb-2">
+                <span v-for="tag in p.tags" :key="tag" class="badge text-bg-secondary me-1">#{{ tag }}</span>
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-primary" @click="verPreguntaEnInicio(p.id)">
+                Ver en el foro
+              </button>
+            </div>
+
+            <div
+              v-if="historialPreguntas.length > 0"
+              class="preguntas-pager d-flex justify-content-between align-items-center mt-4 px-2 py-3 rounded-3 mx-auto"
+              style="max-width: 36rem"
+            >
+              <button class="btn btn-outline-secondary btn-sm" type="button" :disabled="historialPage<=1" @click="cargarHistorialPreguntas(historialPage-1)">Anterior</button>
+              <span class="small text-secondary fw-medium">Página {{ historialPage }} de {{ historialTotalPages }}</span>
+              <button class="btn btn-outline-secondary btn-sm" type="button" :disabled="historialPage>=historialTotalPages" @click="cargarHistorialPreguntas(historialPage+1)">Siguiente</button>
             </div>
           </div>
 
@@ -639,39 +678,6 @@
             </div>
           </div>
 
-          <div v-if="vista==='depuracion' && currentUser" class="view-panel view-panel--depuracion">
-            <div class="view-panel-header text-center mb-3 mx-auto" style="max-width: 32rem">
-              <h3 class="view-panel-title mb-1">Depuración lógica — Login</h3>
-              <p class="view-panel-sub small mb-0">
-                Comprueba correo y contraseña contra la base de datos (misma lógica que al ingresar al foro).
-              </p>
-            </div>
-
-            <div class="depuracion-panel mx-auto">
-              <div class="card depuracion-form-card border-0 p-4 mb-3">
-                <label class="form-label small mb-1">Correo</label>
-                <input v-model="depuracionCorreo" type="email" class="form-control mb-2" placeholder="correo@ejemplo.com" autocomplete="username" @keyup.enter="analizarDepuracion">
-                <label class="form-label small mb-1">Contraseña</label>
-                <input v-model="depuracionPassword" type="password" class="form-control mb-2" autocomplete="current-password" @keyup.enter="analizarDepuracion">
-                <p class="small text-muted mb-3">Usa un usuario registrado en el foro (no inicia sesión, solo analiza).</p>
-                <button type="button" class="btn btn-primary w-100" @click="analizarDepuracion">
-                  Analizar login
-                </button>
-              </div>
-
-              <div
-                v-if="depuracionDiagnostico && depuracionDiagnostico.premisa_1"
-                class="auth-diagnostico rounded-3 p-3"
-                :class="'auth-diagnostico--' + (depuracionDiagnostico.regla || 'info')"
-              >
-                <p class="auth-diagnostico-titulo fw-semibold small mb-2">{{ depuracionDiagnosticoTitulo }}</p>
-                <p class="small mb-1"><span class="text-muted">Premisa 1:</span> {{ depuracionDiagnostico.premisa_1 }}</p>
-                <p class="small mb-1"><span class="text-muted">Premisa 2:</span> {{ depuracionDiagnostico.premisa_2 }}</p>
-                <p class="small mb-0"><span class="text-muted">Conclusión:</span> {{ depuracionDiagnostico.conclusion }}</p>
-              </div>
-            </div>
-          </div>
-
           <div
             v-if="vista==='pregunta' && esEstudiante"
             class="view-panel view-panel--form content-narrow mx-auto"
@@ -853,7 +859,7 @@
           <div v-if="vista==='usuariosGlobales' && esSuperAdmin" class="view-panel view-panel--admin">
             <div class="view-panel-header text-center mb-4 mx-auto" style="max-width: 32rem">
               <h3 class="view-panel-title mb-1">Gestión de usuarios</h3>
-              <p class="view-panel-sub small mb-0">Edita perfiles, roles y contraseñas de cualquier usuario.</p>
+              <p class="view-panel-sub small mb-0">Edita perfiles, roles y contraseñas. Al eliminar, el usuario queda inactivo y puede reactivarse.</p>
             </div>
             <div class="d-flex flex-wrap justify-content-center justify-content-md-end mb-3">
               <button type="button" class="btn btn-primary btn-sm" @click="abrirCreacionUsuario">Nuevo usuario</button>
@@ -866,23 +872,36 @@
                     <th>Nombre</th>
                     <th>Email</th>
                     <th>Rol</th>
+                    <th>Estado</th>
                     <th></th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="u in usuariosGlobales" :key="u.id">
+                  <tr v-for="u in usuariosGlobales" :key="u.id" :class="{ 'table-secondary': !usuarioEstaActivo(u) }">
                     <td>{{ u.id }}</td>
                     <td>{{ u.nombre }}</td>
                     <td>{{ u.email }}</td>
                     <td><code>{{ u.rol }}</code></td>
                     <td>
+                      <span
+                        class="badge"
+                        :class="usuarioEstaActivo(u) ? 'text-bg-success' : 'text-bg-secondary'"
+                      >{{ usuarioEstaActivo(u) ? 'Activo' : 'Inactivo' }}</span>
+                    </td>
+                    <td>
                       <button type="button" class="btn btn-sm btn-outline-primary me-1" @click="abrirEdicionUsuario(u)">Editar</button>
                       <button
-                        v-if="u.id !== currentUser?.id"
+                        v-if="u.id !== currentUser?.id && usuarioEstaActivo(u)"
                         type="button"
                         class="btn btn-sm btn-outline-danger"
-                        @click="eliminarUsuarioSuper(u.id)"
-                      >Eliminar</button>
+                        @click="desactivarUsuarioSuper(u.id)"
+                      >Desactivar</button>
+                      <button
+                        v-if="!usuarioEstaActivo(u)"
+                        type="button"
+                        class="btn btn-sm btn-outline-success"
+                        @click="reactivarUsuarioSuper(u.id)"
+                      >Reactivar</button>
                     </td>
                   </tr>
                 </tbody>

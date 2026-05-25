@@ -14,10 +14,6 @@ frontend/dist/
 # Subidas locales (avatares, tareas)
 foro-academico/backend/static/uploads/
 
-# Entorno / secretos
-.env
-.env.*
-
 # IDE y sistema
 .vscode/
 .idea/

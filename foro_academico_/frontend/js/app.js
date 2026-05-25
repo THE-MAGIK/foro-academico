@@ -28,13 +28,9 @@ createApp({
       pantalla:'inicio',
       vista:'inicio',
       mensaje:'',
-      rol:'',
       busqueda:'',
       email:'',
       password:'',
-      nombre:'',
-      correo:'',
-      pass:'',
       nueva:{ titulo:'', descripcion:'', tagsSeleccionados: [] },
       tagsCatalogo: [],
       tagBorrador: '',
@@ -45,6 +41,16 @@ createApp({
       perfilAvatarPreview: null,
       avatarCacheBust: 0,
       preguntas:[],
+      historialPreguntas: [],
+      historialPage: 1,
+      historialTotalPages: 1,
+      historialPerPage: 5,
+      historialScope: 'all',
+      idiomaTraduccion: 'en',
+      traduccionGlobalActiva: false,
+      traduccionGlobalCargando: false,
+      traduccionesPreguntas: {},
+      traduccionesRespuestas: {},
       currentUser: null,
       respuestasPorPregunta: {},
       comentariosPorPregunta: {},
@@ -54,7 +60,7 @@ createApp({
       respondiendoPreguntaId: null,
       borradorRespuesta: '',
       page: 1,
-      perPage: 10,
+      perPage: 5,
       totalPages: 1,
       filtroTag: '',
       usuariosGlobales: [],
@@ -73,9 +79,6 @@ createApp({
       aulaReplyAssignmentId: null,
       aulaEstudianteBorrador: {},
       loginDiagnostico: null,
-      depuracionCorreo: '',
-      depuracionPassword: '',
-      depuracionDiagnostico: null,
       appModal: {
         visible: false,
         tipo: 'alert',
@@ -119,8 +122,17 @@ createApp({
     loginDiagnosticoTitulo(){
       return this.tituloDiagnostico(this.loginDiagnostico?.regla);
     },
-    depuracionDiagnosticoTitulo(){
-      return this.tituloDiagnostico(this.depuracionDiagnostico?.regla);
+    historialSubtitulo(){
+      if(this.esEstudiante){
+        return 'Preguntas que has publicado en el foro, de la más reciente a la más antigua.';
+      }
+      return 'Todas las preguntas creadas en el foro, de la más reciente a la más antigua.';
+    },
+    historialVacio(){
+      if(this.esEstudiante){
+        return 'Aún no has publicado ninguna pregunta.';
+      }
+      return 'No hay preguntas registradas en el foro.';
     },
   },
 
@@ -135,6 +147,9 @@ createApp({
       if(v === 'pregunta' && this.esEstudiante){
         this.cargarTagsCatalogo();
       }
+    },
+    idiomaTraduccion(){
+      this.reiniciarTraducciones();
     },
     pantalla(p){
       if(p === 'login'){
@@ -379,42 +394,72 @@ createApp({
       }
     },
 
-    //  REGISTRO REAL
-    registrar(){
-      if(!this.rol || !this.nombre || !this.correo || !this.pass){
-        return this.mostrarAviso('Completa datos');
-      }
+    irHistorial(){
+      this.vista = 'historial';
+      this.cargarHistorialPreguntas(1);
+    },
 
-      fetch(`${API}/api/register`,{
-        method:'POST',
-        headers:{
-          'Content-Type':'application/json'
-        },
-        body: JSON.stringify({
-          nombre:this.nombre,
-          email:this.correo,
-          password:this.pass,
-          rol:this.rol.toLowerCase()
-        })
-      })
-      .then(async res=>{
-        const data = await res.json();
-        if(!res.ok){
-          throw new Error(data.error || 'No se pudo registrar');
-        }
-        return data;
-      })
-      .then(()=>{
-        this.mostrarAviso('Tu cuenta está lista. Ya puedes iniciar sesión.', 'Registro correcto');
-        this.pantalla='login';
-        this.rol='';
-        this.nombre='';
-        this.correo='';
-        this.pass='';
-      })
-      .catch(err=>{
-        this.mostrarAviso(err.message);
+    cargarHistorialPreguntas(page = this.historialPage){
+      this.historialPage = page;
+      const params = new URLSearchParams({
+        page: String(this.historialPage),
+        per_page: String(this.historialPerPage),
       });
+      fetch(`${API}/api/questions/history?${params.toString()}`, { credentials: 'include' })
+        .then(async res=>{
+          const data = await res.json().catch(()=>({}));
+          if(!res.ok){
+            throw new Error(data.error || `Error al cargar historial (${res.status})`);
+          }
+          return data;
+        })
+        .then(data=>{
+          this.historialPreguntas = data.items || [];
+          this.historialTotalPages = Math.max(data.total_pages || 1, 1);
+          this.historialScope = data.scope || 'all';
+        })
+        .catch(err=>{
+          this.mostrarAviso(err.message || 'No se pudo cargar el historial');
+          this.historialPreguntas = [];
+          this.historialTotalPages = 1;
+        });
+    },
+
+    verPreguntaEnInicio(questionId){
+      this.vista = 'inicio';
+      this.busqueda = '';
+      this.filtroTag = '';
+      this.page = 1;
+      const params = new URLSearchParams({
+        page: '1',
+        per_page: String(this.perPage),
+        id: String(questionId),
+      });
+      fetch(`${API}/api/questions?${params.toString()}`)
+        .then(async res=>{
+          const data = await res.json().catch(()=>({}));
+          if(!res.ok){
+            throw new Error(data.error || 'No se pudo abrir la pregunta');
+          }
+          return data;
+        })
+        .then(data=>{
+          this.preguntas = data.items || [];
+          this.totalPages = data.total_pages || 1;
+          this.reiniciarTraducciones();
+          this.cargarRespuestasDePreguntas();
+          this.cargarComentariosDePreguntas();
+          this.cargarVotosPreguntas();
+          this.$nextTick(()=>{
+            const el = document.getElementById(`pregunta-${questionId}`);
+            if(el){
+              el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              el.classList.add('question-card--highlight');
+              setTimeout(()=> el.classList.remove('question-card--highlight'), 2500);
+            }
+          });
+        })
+        .catch(err=> this.mostrarAviso(err.message));
     },
 
     //  TRAER PREGUNTAS DESDE MYSQL
@@ -429,7 +474,7 @@ createApp({
         params.set('tag', this.filtroTag);
       }
 
-      fetch(`${API}/api/questions?${params.toString()}`)
+      return fetch(`${API}/api/questions?${params.toString()}`)
       .then(async res=>{
         const data = await res.json().catch(()=>({}));
         if(!res.ok){
@@ -440,15 +485,18 @@ createApp({
       .then(data=>{
         this.preguntas = data.items || [];
         this.totalPages = data.total_pages || 1;
+        this.reiniciarTraducciones();
         this.cargarRespuestasDePreguntas();
         this.cargarComentariosDePreguntas();
         this.cargarVotosPreguntas();
+        return data;
       })
       .catch(err=>{
         console.error(err);
         this.mostrarAviso(err.message || 'No se pudieron cargar las preguntas');
         this.preguntas = [];
         this.totalPages = 1;
+        throw err;
       });
     },
 
@@ -677,6 +725,9 @@ createApp({
       })
       .then(()=>{
         this.cargarPreguntas(1);
+        if(this.vista === 'historial'){
+          this.cargarHistorialPreguntas(1);
+        }
         this.nueva={ titulo:'', descripcion:'', tagsSeleccionados: [] };
         this.tagBorrador = '';
         this.vista='inicio';
@@ -804,6 +855,144 @@ createApp({
         return window.DOMPurify.sanitize(html);
       }
       return text;
+    },
+
+    etiquetaIdiomaTraduccion(code){
+      const map = { es: 'Español', en: 'Inglés', fr: 'Francés', pt: 'Portugués', de: 'Alemán', it: 'Italiano' };
+      return map[code] || code;
+    },
+
+    reiniciarTraducciones(){
+      this.traduccionesPreguntas = {};
+      this.traduccionesRespuestas = {};
+      this.traduccionGlobalActiva = false;
+      this.traduccionGlobalCargando = false;
+    },
+
+    tituloPreguntaMostrado(p){
+      if(!this.traduccionGlobalActiva){
+        return p.titulo;
+      }
+      const t = this.traduccionesPreguntas[p.id];
+      return t?.titulo ?? p.titulo;
+    },
+
+    contenidoPreguntaMostrado(p){
+      if(!this.traduccionGlobalActiva){
+        return p.contenido;
+      }
+      const t = this.traduccionesPreguntas[p.id];
+      return t?.contenido ?? p.contenido;
+    },
+
+    contenidoRespuestaMostrado(r){
+      if(!this.traduccionGlobalActiva){
+        return r.contenido;
+      }
+      const t = this.traduccionesRespuestas[r.id];
+      return t?.contenido ?? r.contenido;
+    },
+
+    paginaTraduccionCompleta(){
+      if(!this.preguntas.length){
+        return false;
+      }
+      for(const p of this.preguntas){
+        const t = this.traduccionesPreguntas[p.id];
+        if(!t || t.idioma !== this.idiomaTraduccion || t.titulo === undefined || t.contenido === undefined){
+          return false;
+        }
+        for(const r of (this.respuestasPorPregunta[p.id] || [])){
+          const tr = this.traduccionesRespuestas[r.id];
+          if(!tr || tr.idioma !== this.idiomaTraduccion || tr.contenido === undefined){
+            return false;
+          }
+        }
+      }
+      return true;
+    },
+
+    async llamarTraduccion(texts, target){
+      const res = await fetch(`${API}/api/translate`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          texts,
+          target: target || this.idiomaTraduccion,
+          source: 'auto',
+        }),
+      });
+      const data = await res.json().catch(()=>({}));
+      if(!res.ok){
+        throw new Error(data.error || 'No se pudo traducir');
+      }
+      if(!Array.isArray(data.translations) || !data.translations.length){
+        throw new Error('Traduccion vacia');
+      }
+      return data;
+    },
+
+    async alternarTraduccionTodasPublicaciones(){
+      if(this.traduccionGlobalCargando){
+        return;
+      }
+      if(this.traduccionGlobalActiva){
+        this.traduccionGlobalActiva = false;
+        return;
+      }
+      if(!this.preguntas.length){
+        return this.mostrarAviso('No hay publicaciones en esta página');
+      }
+      if(this.paginaTraduccionCompleta()){
+        this.traduccionGlobalActiva = true;
+        return;
+      }
+      this.traduccionGlobalCargando = true;
+      try{
+        await this.traducirPublicacionesPagina();
+        this.traduccionGlobalActiva = true;
+      }catch(err){
+        this.mostrarAviso(err.message);
+      }finally{
+        this.traduccionGlobalCargando = false;
+      }
+    },
+
+    async traducirPublicacionesPagina(){
+      const jobs = [];
+      for(const p of this.preguntas){
+        jobs.push({ kind: 'pregunta', id: p.id, field: 'titulo', text: p.titulo || '' });
+        jobs.push({ kind: 'pregunta', id: p.id, field: 'contenido', text: p.contenido || '' });
+        for(const r of (this.respuestasPorPregunta[p.id] || [])){
+          jobs.push({ kind: 'respuesta', id: r.id, field: 'contenido', text: r.contenido || '' });
+        }
+      }
+      if(!jobs.length){
+        throw new Error('No hay texto para traducir');
+      }
+
+      const chunkSize = 20;
+      for(let i = 0; i < jobs.length; i += chunkSize){
+        const chunk = jobs.slice(i, i + chunkSize);
+        const data = await this.llamarTraduccion(chunk.map(j => j.text));
+        chunk.forEach((job, idx)=>{
+          const translated = data.translations[idx];
+          if(job.kind === 'pregunta'){
+            const prev = this.traduccionesPreguntas[job.id] || {};
+            this.traduccionesPreguntas[job.id] = {
+              ...prev,
+              [job.field]: translated,
+              idioma: this.idiomaTraduccion,
+            };
+          }else{
+            this.traduccionesRespuestas[job.id] = {
+              contenido: translated,
+              idioma: this.idiomaTraduccion,
+            };
+          }
+        });
+      }
     },
 
     async editarPreguntaComoAdmin(question){
@@ -1030,6 +1219,13 @@ createApp({
       .catch(err=> this.mostrarAviso(err.message));
     },
 
+    usuarioEstaActivo(u){
+      if(!u || u.activo === undefined || u.activo === null){
+        return true;
+      }
+      return Number(u.activo) === 1;
+    },
+
     cargarUsuariosGlobales(){
       if(!this.esSuperAdmin){
         return;
@@ -1149,14 +1345,14 @@ createApp({
       .catch(err=> this.mostrarAviso(err.message));
     },
 
-    async eliminarUsuarioSuper(uid){
+    async desactivarUsuarioSuper(uid){
       if(!this.esSuperAdmin){
         return;
       }
       if(uid === this.currentUser.id){
-        return this.mostrarAviso('No puedes eliminar tu propia sesion desde aqui');
+        return this.mostrarAviso('No puedes desactivar tu propia sesion desde aqui');
       }
-      if(!(await this.confirmarAsync('Eliminar este usuario de forma permanente. ¿Continuar?', 'Eliminar usuario', 'Eliminar', 'Cancelar', { danger: true }))){
+      if(!(await this.confirmarAsync('El usuario quedara inactivo y no podra iniciar sesion. ¿Continuar?', 'Desactivar usuario', 'Desactivar', 'Cancelar', { danger: true }))){
         return;
       }
       fetch(`${API}/api/superadmin/users/${uid}`,{
@@ -1166,15 +1362,40 @@ createApp({
       .then(async res=>{
         const data = await res.json();
         if(!res.ok){
-          throw new Error(data.error || 'No se pudo eliminar');
+          throw new Error(data.error || 'No se pudo desactivar');
         }
         return data;
       })
       .then(()=>{
+        this.mostrarAviso('Usuario desactivado');
         this.cargarUsuariosGlobales();
         if(this.superUsuarioFormActivo && this.superEdit.id === uid){
           this.cerrarFormSuperUsuario();
         }
+      })
+      .catch(err=> this.mostrarAviso(err.message));
+    },
+
+    reactivarUsuarioSuper(uid){
+      if(!this.esSuperAdmin){
+        return;
+      }
+      fetch(`${API}/api/superadmin/users/${uid}`,{
+        method:'PATCH',
+        credentials:'include',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ activo: true })
+      })
+      .then(async res=>{
+        const data = await res.json();
+        if(!res.ok){
+          throw new Error(data.error || 'No se pudo reactivar');
+        }
+        return data;
+      })
+      .then(()=>{
+        this.mostrarAviso('Usuario reactivado');
+        this.cargarUsuariosGlobales();
       })
       .catch(err=> this.mostrarAviso(err.message));
     },
@@ -1245,46 +1466,6 @@ createApp({
           this.mostrarAviso(habiaFotoPendiente ? 'Perfil y foto actualizados' : 'Perfil actualizado');
         })
         .catch(err=> this.mostrarAviso(err.message));
-    },
-
-    irDepuracion(){
-      this.vista = 'depuracion';
-      this.depuracionDiagnostico = null;
-      if(this.currentUser && this.currentUser.email && !this.depuracionCorreo){
-        this.depuracionCorreo = this.currentUser.email;
-      }
-    },
-
-    analizarDepuracion(){
-      this.depuracionDiagnostico = null;
-      fetch(`${API}/api/logical-diagnosis`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: (this.depuracionCorreo || '').trim(),
-          password: this.depuracionPassword || '',
-        }),
-      })
-        .then(async res => {
-          const tipoJson = (res.headers.get('content-type') || '').includes('application/json');
-          let data = {};
-          if(tipoJson){
-            data = await res.json().catch(() => ({}));
-          }
-          if(data.diagnostico){
-            this.depuracionDiagnostico = data.diagnostico;
-            return;
-          }
-          if(!tipoJson || res.status >= 502){
-            this.depuracionDiagnostico = this.diagnosticoServidorCaido();
-            return;
-          }
-          this.depuracionDiagnostico = this.diagnosticoServidorCaido();
-        })
-        .catch(()=>{
-          this.depuracionDiagnostico = this.diagnosticoServidorCaido();
-        });
     },
 
     irAula(){

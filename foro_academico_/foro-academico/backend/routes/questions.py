@@ -1,37 +1,139 @@
 """
 Contenido del foro: preguntas, etiquetas, comentarios, votos y traduccion.
 
-Listado paginado (q, tag); crear pregunta solo estudiante; votos UPSERT por usuario.
-/api/translate: proxy a Google Cloud Translation (requiere GOOGLE_TRANSLATE_API_KEY).
+Listado paginado (q, tag, id); historial (/api/questions/history); crear pregunta solo estudiante.
+/api/translate: Google Cloud Translation (clave en backend/config.py).
 """
+import html
 import json
 import os
+import urllib.error
 import urllib.parse
 import urllib.request
 
 from flask import Blueprint, jsonify, request, session
 
 from common import can_moderate_content, get_json, get_user_by_id, is_student, resolve_avatar_url
+from config import get_google_translate_api_key
 from db import get_connection
 
 bp = Blueprint("questions", __name__)
+
+_QUESTION_SELECT = (
+    "SELECT q.*, u.nombre AS autor, u.email AS autor_email, u.avatar_ext AS autor_avatar_ext, "
+    "(SELECT GROUP_CONCAT(DISTINCT t2.nombre ORDER BY t2.nombre SEPARATOR ',') "
+    "FROM question_tags qt2 INNER JOIN tags t2 ON t2.id=qt2.tag_id "
+    "WHERE qt2.question_id=q.id) AS tags "
+    "FROM questions q "
+    "LEFT JOIN users u ON u.id=q.user_id "
+)
+
+
+def _enrich_question_rows(rows):
+    for item in rows:
+        item["tags"] = item["tags"].split(",") if item.get("tags") else []
+        autor_email = item.pop("autor_email", None)
+        ext = item.pop("autor_avatar_ext", None)
+        uid = item.get("user_id")
+        item["autor_avatar_url"] = resolve_avatar_url(autor_email, uid, ext)
+    return rows
+
+
+def _fetch_questions_page(cursor, where_sql, params, page, per_page):
+    offset = (page - 1) * per_page
+    cursor.execute(
+        "SELECT COUNT(DISTINCT q.id) AS total FROM questions q "
+        "LEFT JOIN question_tags qt ON qt.question_id=q.id "
+        "LEFT JOIN tags t ON t.id=qt.tag_id "
+        f"{where_sql}",
+        tuple(params),
+    )
+    total = cursor.fetchone()["total"]
+
+    cursor.execute(
+        "SELECT q.id FROM questions q "
+        "LEFT JOIN question_tags qt ON qt.question_id=q.id "
+        "LEFT JOIN tags t ON t.id=qt.tag_id "
+        f"{where_sql} GROUP BY q.id ORDER BY MAX(q.fecha_creacion) DESC LIMIT %s OFFSET %s",
+        tuple(list(params) + [per_page, offset]),
+    )
+    ids = [r["id"] for r in cursor.fetchall()]
+    if not ids:
+        return [], total
+
+    placeholders = ",".join(["%s"] * len(ids))
+    cursor.execute(
+        _QUESTION_SELECT + f"WHERE q.id IN ({placeholders}) "
+        f"ORDER BY FIELD(q.id,{placeholders})",
+        tuple(ids + ids),
+    )
+    return _enrich_question_rows(cursor.fetchall()), total
+
+
+@bp.route("/api/questions/history", methods=["GET"])
+def get_questions_history():
+    """Historial de preguntas creadas: propias (estudiante) o todas (otros roles)."""
+    uid = session.get("user_id")
+    if not uid:
+        return jsonify({"error": "No autenticado"}), 401
+
+    page = max(int(request.args.get("page", 1)), 1)
+    per_page = max(min(int(request.args.get("per_page", 5)), 50), 1)
+
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    actor = get_user_by_id(cursor, uid)
+    if not actor:
+        cursor.close()
+        conn.close()
+        return jsonify({"error": "No autenticado"}), 401
+
+    filters = []
+    params = []
+    scope = "all"
+    if is_student(actor):
+        filters.append("q.user_id = %s")
+        params.append(uid)
+        scope = "mine"
+
+    where_sql = f"WHERE {' AND '.join(filters)}" if filters else ""
+    data, total = _fetch_questions_page(cursor, where_sql, params, page, per_page)
+    cursor.close()
+    conn.close()
+
+    return jsonify(
+        {
+            "items": data,
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "total_pages": (total + per_page - 1) // per_page if total else 0,
+            "scope": scope,
+        }
+    )
 
 
 @bp.route("/api/questions", methods=["GET"])
 def get_questions():
     # Lista con paginacion; q filtra titulo/cuerpo, tag por nombre exacto en la tabla tags.
     page = max(int(request.args.get("page", 1)), 1)
-    per_page = max(min(int(request.args.get("per_page", 10)), 50), 1)
-    offset = (page - 1) * per_page
+    per_page = max(min(int(request.args.get("per_page", 5)), 50), 1)
     q = (request.args.get("q") or "").strip()
     if q.startswith("#"):
         q = q[1:].strip()
     tag = (request.args.get("tag") or "").strip()
+    question_id = request.args.get("id")
 
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     filters = []
     params = []
+    if question_id:
+        try:
+            filters.append("q.id = %s")
+            params.append(int(question_id))
+        except (TypeError, ValueError):
+            pass
     if q:
         # Titulo, cuerpo o nombre de etiqueta asociada (ej. buscar "python" encuentra tag).
         filters.append(
@@ -44,49 +146,7 @@ def get_questions():
         params.append(tag)
 
     where_sql = f"WHERE {' AND '.join(filters)}" if filters else ""
-    cursor.execute(
-        "SELECT COUNT(DISTINCT q.id) AS total "
-        "FROM questions q "
-        "LEFT JOIN question_tags qt ON qt.question_id=q.id "
-        "LEFT JOIN tags t ON t.id=qt.tag_id "
-        f"{where_sql}",
-        tuple(params),
-    )
-    total = cursor.fetchone()["total"]
-
-    # Paginar por id (GROUP BY solo q.id) y luego cargar filas completas sin q.* + GROUP BY,
-    # que en MySQL con ONLY_FULL_GROUP_BY suele fallar o devolver resultados vacíos.
-    cursor.execute(
-        "SELECT q.id FROM questions q "
-        "LEFT JOIN question_tags qt ON qt.question_id=q.id "
-        "LEFT JOIN tags t ON t.id=qt.tag_id "
-        f"{where_sql} GROUP BY q.id ORDER BY MAX(q.fecha_creacion) DESC LIMIT %s OFFSET %s",
-        tuple(list(params) + [per_page, offset]),
-    )
-    id_rows = cursor.fetchall()
-    ids = [r["id"] for r in id_rows]
-    if not ids:
-        data = []
-    else:
-        placeholders = ",".join(["%s"] * len(ids))
-        cursor.execute(
-            "SELECT q.*, u.nombre AS autor, u.email AS autor_email, u.avatar_ext AS autor_avatar_ext, "
-            "(SELECT GROUP_CONCAT(DISTINCT t2.nombre ORDER BY t2.nombre SEPARATOR ',') "
-            "FROM question_tags qt2 INNER JOIN tags t2 ON t2.id=qt2.tag_id "
-            "WHERE qt2.question_id=q.id) AS tags "
-            "FROM questions q "
-            "LEFT JOIN users u ON u.id=q.user_id "
-            f"WHERE q.id IN ({placeholders}) "
-            f"ORDER BY FIELD(q.id,{placeholders})",
-            tuple(ids + ids),
-        )
-        data = cursor.fetchall()
-    for item in data:
-        item["tags"] = item["tags"].split(",") if item.get("tags") else []
-        autor_email = item.pop("autor_email", None)
-        ext = item.pop("autor_avatar_ext", None)
-        uid = item.get("user_id")
-        item["autor_avatar_url"] = resolve_avatar_url(autor_email, uid, ext)
+    data, total = _fetch_questions_page(cursor, where_sql, params, page, per_page)
     cursor.close()
     conn.close()
     return jsonify(
@@ -95,7 +155,7 @@ def get_questions():
             "page": page,
             "per_page": per_page,
             "total": total,
-            "total_pages": (total + per_page - 1) // per_page,
+            "total_pages": (total + per_page - 1) // per_page if total else 0,
         }
     )
 
@@ -473,23 +533,71 @@ def delete_tag_moderation(tag_id):
 
 @bp.route("/api/translate", methods=["POST"])
 def translate_text():
-    # POST a Google; fallos de red o JSON invalido propagan excepcion (502 no forzado aqui).
+    """Traduce publicaciones del foro via Google Cloud Translation."""
+    if not session.get("user_id"):
+        return jsonify({"error": "Debes iniciar sesion para traducir"}), 401
+
     data = get_json(request)
-    text = data.get("text")
-    target = data.get("target", "en")
-    source = data.get("source", "es")
-    if not text:
-        return jsonify({"error": "text es obligatorio"}), 400
-    api_key = os.getenv("GOOGLE_TRANSLATE_API_KEY")
+    target = (data.get("target") or "en").strip().lower()
+    source = (data.get("source") or "auto").strip().lower()
+
+    raw_texts = data.get("texts")
+    if raw_texts is None and data.get("text") is not None:
+        raw_texts = [data.get("text")]
+    if not isinstance(raw_texts, list) or not raw_texts:
+        return jsonify({"error": "Indica text o texts (lista de cadenas)"}), 400
+
+    texts = [str(t).strip() for t in raw_texts if t is not None and str(t).strip()]
+    if not texts:
+        return jsonify({"error": "No hay texto para traducir"}), 400
+    if len(texts) > 20:
+        return jsonify({"error": "Maximo 20 fragmentos por solicitud"}), 400
+
+    api_key = get_google_translate_api_key()
     if not api_key:
-        return jsonify({"error": "Falta GOOGLE_TRANSLATE_API_KEY para usar Google Translate API"}), 400
+        return jsonify(
+            {
+                "error": (
+                    "Falta GOOGLE_TRANSLATE_API_KEY. "
+                    "Pégala en foro-academico/backend/config.py y reinicia Flask."
+                )
+            }
+        ), 503
+
+    form = [("target", target)]
+    if source and source != "auto":
+        form.append(("source", source))
+    for fragment in texts:
+        form.append(("q", fragment))
 
     endpoint = f"https://translation.googleapis.com/language/translate/v2?key={api_key}"
-    payload = urllib.parse.urlencode({"q": text, "target": target, "source": source}).encode("utf-8")
+    payload = urllib.parse.urlencode(form).encode("utf-8")
     req = urllib.request.Request(endpoint, data=payload, method="POST")
     req.add_header("Content-Type", "application/x-www-form-urlencoded")
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        body = resp.read().decode("utf-8")
-    parsed = json.loads(body)
-    translated = parsed["data"]["translations"][0]["translatedText"]
-    return jsonify({"translatedText": translated})
+
+    try:
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            body = resp.read().decode("utf-8")
+        parsed = json.loads(body)
+        rows = parsed.get("data", {}).get("translations", [])
+        translations = [html.unescape(row.get("translatedText", "")) for row in rows]
+        detected = rows[0].get("detectedSourceLanguage") if rows else None
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        return jsonify({"error": "Google Translate rechazo la solicitud", "detail": detail}), 502
+    except urllib.error.URLError:
+        return jsonify({"error": "No se pudo conectar con Google Translate"}), 503
+    except (json.JSONDecodeError, KeyError, IndexError):
+        return jsonify({"error": "Respuesta invalida de Google Translate"}), 502
+
+    if len(translations) != len(texts):
+        return jsonify({"error": "Traduccion incompleta"}), 502
+
+    out = {
+        "translations": translations,
+        "target": target,
+        "detectedSourceLanguage": detected,
+    }
+    if len(translations) == 1:
+        out["translatedText"] = translations[0]
+    return jsonify(out)

@@ -17,10 +17,20 @@ def get_json(request):
 def get_user_by_id(cursor, user_id):
     """Datos publicos del usuario por id (sin contrasena)."""
     cursor.execute(
-        "SELECT id, nombre, email, rol, avatar_ext FROM users WHERE id=%s",
+        "SELECT id, nombre, email, rol, avatar_ext, activo FROM users WHERE id=%s",
         (user_id,),
     )
     return cursor.fetchone()
+
+
+def is_user_active(user):
+    """True si el usuario puede usar el sistema (no desactivado)."""
+    if not user:
+        return False
+    activo = user.get("activo")
+    if activo is None:
+        return True
+    return bool(int(activo))
 
 
 def is_student(user):

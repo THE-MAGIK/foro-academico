@@ -1,10 +1,7 @@
 """
 Diagnóstico de errores de login con razonamiento lógico (Modus Tollens / Ponens).
-Solo premisas y conclusión; usado en /api/login y /api/logical-diagnosis.
+Solo premisas y conclusión; usado en /api/login.
 """
-import bcrypt
-
-from db import get_connection
 
 
 def _diag(regla, premisa_1, premisa_2, conclusion):
@@ -111,56 +108,3 @@ def diagnostico_login_error_servidor(detalle=None):
             + extra
         ),
     )
-
-
-def diagnostico_login_exitoso_usuario(nombre):
-    return _diag(
-        "modus_ponens",
-        (
-            "P → Q: Si el correo y la contraseña son correctos, "
-            "entonces la sesión se inicia en el servidor."
-        ),
-        f"P: Las credenciales coinciden con el usuario «{nombre}» en la base de datos.",
-        "∴ Q: El acceso es válido; las credenciales verificadas en MySQL son correctas.",
-    )
-
-
-def diagnostico_login_desde_bd(email, password):
-    correo = (email or "").strip()
-    if not correo or not password:
-        faltan = []
-        if not correo:
-            faltan.append("correo")
-        if not password:
-            faltan.append("contraseña")
-        return diagnostico_login_datos_incompletos(faltan)
-
-    try:
-        conn = get_connection()
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute(
-            "SELECT id, nombre, email, password FROM users WHERE email=%s",
-            (correo,),
-        )
-        user = cursor.fetchone()
-        cursor.close()
-        conn.close()
-    except Exception as exc:
-        return diagnostico_login_error_servidor(str(exc))
-
-    if user and bcrypt.checkpw(
-        password.encode("utf-8"),
-        user["password"].encode("utf-8"),
-    ):
-        return diagnostico_login_exitoso_usuario(user.get("nombre") or correo)
-
-    return diagnostico_login_credenciales_invalidas()
-
-
-def resolver_diagnostico_escenario(escenario, params):
-    if escenario == "login":
-        return diagnostico_login_desde_bd(
-            params.get("email") or params.get("usuario", ""),
-            params.get("password", ""),
-        )
-    return _diag("validacion", "Escenario no disponible.", "—", "Solo se admite el escenario login.")

@@ -136,6 +136,11 @@ def ensure_schema():
             "ALTER TABLE assignment_comments ADD COLUMN is_private TINYINT(1) NOT NULL DEFAULT 0"
         )
         conn.commit()
+    if not col_exists("users", "activo"):
+        cursor.execute(
+            "ALTER TABLE users ADD COLUMN activo TINYINT(1) NOT NULL DEFAULT 1"
+        )
+        conn.commit()
     cursor.execute(
         "SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS "
         "WHERE CONSTRAINT_SCHEMA = DATABASE() "

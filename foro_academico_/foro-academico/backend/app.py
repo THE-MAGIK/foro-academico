@@ -6,9 +6,10 @@ La logica de cada area esta en routes/ y helpers en common.py.
 """
 import os
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request, session
 from flask_cors import CORS
 
+from common import get_user_by_id, is_user_active
 from db import ensure_schema, get_connection
 from routes.admins import bp as admins_bp
 from routes.auth import bp as auth_bp
@@ -17,8 +18,6 @@ from routes.professors import bp as professors_bp
 from routes.superadmin import bp as superadmin_bp
 from routes.questions import bp as questions_bp
 from routes.students import bp as students_bp
-from routes.logical import bp as logical_bp
-
 app = Flask(__name__)
 ensure_schema()
 # Clave para firmar cookies de sesion (login). En produccion definir FLASK_SECRET_KEY.
@@ -40,6 +39,33 @@ CORS(
         }
     },
 )
+
+
+@app.before_request
+def block_inactive_session():
+    """Cierra la sesion si el usuario fue desactivado mientras estaba conectado."""
+    if request.method == "OPTIONS":
+        return None
+    path = request.path or ""
+    if not path.startswith("/api/"):
+        return None
+    if path in ("/api/login", "/api/health"):
+        return None
+    uid = session.get("user_id")
+    if not uid:
+        return None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+        user = get_user_by_id(cursor, uid)
+        cursor.close()
+        conn.close()
+        if user and not is_user_active(user):
+            session.clear()
+            return jsonify({"error": "Cuenta inactiva"}), 403
+    except Exception:
+        return None
+    return None
 
 
 @app.route("/")
@@ -68,7 +94,6 @@ app.register_blueprint(questions_bp)
 app.register_blueprint(students_bp)
 app.register_blueprint(professors_bp)
 app.register_blueprint(admins_bp)
-app.register_blueprint(logical_bp)
 
 
 if __name__ == '__main__':

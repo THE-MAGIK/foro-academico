@@ -2,19 +2,27 @@
 Gestion de usuarios y roles reservada al administrador supremo (rol superadmin).
 
 Requiere sesion iniciada; las rutas comprueban session['user_id'] en base de datos.
-PATCH: actualiza nombre, email, password y rol; no deja quitar el unico superadmin.
-DELETE: borra usuario; bloquea borrar el unico superadmin o borrarse a si mismo.
+PATCH: actualiza nombre, email, password, rol y estado activo/inactivo.
+DELETE: desactiva usuario (no borra fila); bloquea desactivar el unico superadmin activo.
 POST /api/superadmin/users: crea usuario con rol elegido (nombre, email, password, rol).
 """
 import bcrypt
 from flask import Blueprint, jsonify, request, session
 
-from common import get_json, get_user_by_id, is_superadmin, normalize_role
+from common import get_json, get_user_by_id, is_superadmin, is_user_active, normalize_role
 from db import get_connection
 
 bp = Blueprint("superadmin", __name__)
 
 ROLES_VALIDOS = {"estudiante", "profesor", "admin", "superadmin"}
+
+
+def _parse_activo(raw):
+    if raw in (True, 1, "1", "true", "activo", "active"):
+        return 1
+    if raw in (False, 0, "0", "false", "inactivo", "inactive"):
+        return 0
+    return None
 
 
 def _require_superadmin():
@@ -29,7 +37,20 @@ def _require_superadmin():
     conn.close()
     if not user or not is_superadmin(user):
         return None, (jsonify({"error": "Solo el administrador supremo puede usar esta accion"}), 403)
+    if not is_user_active(user):
+        return None, (jsonify({"error": "Cuenta inactiva"}), 403)
     return user, None
+
+
+def _count_active_superadmins(cursor, exclude_user_id=None):
+    if exclude_user_id:
+        cursor.execute(
+            "SELECT COUNT(*) AS c FROM users WHERE rol='superadmin' AND activo=1 AND id!=%s",
+            (exclude_user_id,),
+        )
+    else:
+        cursor.execute("SELECT COUNT(*) AS c FROM users WHERE rol='superadmin' AND activo=1")
+    return cursor.fetchone()["c"]
 
 
 @bp.route("/api/superadmin/users", methods=["POST"])
@@ -64,13 +85,16 @@ def create_user_as_superadmin():
     hashed = bcrypt.hashpw(str(password).encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     ins = conn.cursor()
     ins.execute(
-        "INSERT INTO users (nombre, email, password, rol) VALUES (%s,%s,%s,%s)",
+        "INSERT INTO users (nombre, email, password, rol, activo) VALUES (%s,%s,%s,%s,1)",
         (nombre, email, hashed, role),
     )
     conn.commit()
     new_id = ins.lastrowid
     ins.close()
-    cursor.execute("SELECT id, nombre, email, rol FROM users WHERE id=%s", (new_id,))
+    cursor.execute(
+        "SELECT id, nombre, email, rol, activo FROM users WHERE id=%s",
+        (new_id,),
+    )
     created = cursor.fetchone()
     cursor.close()
     conn.close()
@@ -86,7 +110,10 @@ def patch_user_as_superadmin(user_id):
     data = get_json(request)
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT id, nombre, email, password, rol FROM users WHERE id=%s", (user_id,))
+    cursor.execute(
+        "SELECT id, nombre, email, password, rol, activo FROM users WHERE id=%s",
+        (user_id,),
+    )
     row = cursor.fetchone()
     if not row:
         cursor.close()
@@ -111,7 +138,6 @@ def patch_user_as_superadmin(user_id):
             cursor.close()
             conn.close()
             return jsonify({"error": "El email no puede estar vacio"}), 400
-        # Evita duplicar email antes del UPDATE (unicidad en BD).
         cursor.execute("SELECT id FROM users WHERE email=%s AND id!=%s", (email, user_id))
         if cursor.fetchone():
             cursor.close()
@@ -136,16 +162,35 @@ def patch_user_as_superadmin(user_id):
             cursor.close()
             conn.close()
             return jsonify({"error": "Rol invalido"}), 400
-        # No degradar al ultimo superadmin restante.
-        if row["rol"] == "superadmin" and new_rol != "superadmin":
-            cursor.execute("SELECT COUNT(*) AS c FROM users WHERE rol='superadmin'")
-            cnt = cursor.fetchone()["c"]
-            if cnt <= 1:
+        if row["rol"] == "superadmin" and new_rol != "superadmin" and is_user_active(row):
+            if _count_active_superadmins(cursor, exclude_user_id=user_id) < 1:
                 cursor.close()
                 conn.close()
-                return jsonify({"error": "No se puede quitar el unico administrador supremo"}), 400
+                return jsonify({"error": "No se puede quitar el unico administrador supremo activo"}), 400
         updates.append("rol=%s")
         values.append(new_rol)
+        row["rol"] = new_rol
+
+    if "activo" in data:
+        new_activo = _parse_activo(data.get("activo"))
+        if new_activo is None:
+            cursor.close()
+            conn.close()
+            return jsonify({"error": "Estado activo invalido"}), 400
+        if new_activo == 0:
+            if user_id == session.get("user_id"):
+                cursor.close()
+                conn.close()
+                return jsonify({"error": "No puedes desactivar tu propia cuenta desde aqui"}), 400
+            if row["rol"] == "superadmin" and is_user_active(row):
+                if _count_active_superadmins(cursor, exclude_user_id=user_id) < 1:
+                    cursor.close()
+                    conn.close()
+                    return jsonify(
+                        {"error": "No se puede desactivar el unico administrador supremo activo"}
+                    ), 400
+        updates.append("activo=%s")
+        values.append(new_activo)
 
     if not updates:
         cursor.close()
@@ -160,7 +205,7 @@ def patch_user_as_superadmin(user_id):
     conn.commit()
 
     cursor.execute(
-        "SELECT id, nombre, email, rol FROM users WHERE id=%s",
+        "SELECT id, nombre, email, rol, activo FROM users WHERE id=%s",
         (user_id,),
     )
     updated = cursor.fetchone()
@@ -171,36 +216,38 @@ def patch_user_as_superadmin(user_id):
 
 @bp.route("/api/superadmin/users/<int:user_id>", methods=["DELETE"])
 def delete_user_as_superadmin(user_id):
+    """Desactiva al usuario (borrado logico)."""
     _, err = _require_superadmin()
     if err:
         return err
 
     if user_id == session.get("user_id"):
-        return jsonify({"error": "No puedes eliminar tu propia cuenta desde aqui"}), 400
+        return jsonify({"error": "No puedes desactivar tu propia cuenta desde aqui"}), 400
 
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT id, rol FROM users WHERE id=%s", (user_id,))
+    cursor.execute("SELECT id, rol, activo FROM users WHERE id=%s", (user_id,))
     row = cursor.fetchone()
     if not row:
         cursor.close()
         conn.close()
         return jsonify({"error": "Usuario no encontrado"}), 404
 
+    if not is_user_active(row):
+        cursor.close()
+        conn.close()
+        return jsonify({"error": "El usuario ya esta inactivo"}), 400
+
     if row["rol"] == "superadmin":
-        cursor.execute("SELECT COUNT(*) AS c FROM users WHERE rol='superadmin'")
-        cnt = cursor.fetchone()["c"]
-        if cnt <= 1:
+        if _count_active_superadmins(cursor, exclude_user_id=user_id) < 1:
             cursor.close()
             conn.close()
-            return jsonify({"error": "No se puede eliminar el unico administrador supremo"}), 400
+            return jsonify(
+                {"error": "No se puede desactivar el unico administrador supremo activo"}
+            ), 400
 
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM users WHERE id=%s", (user_id,))
+    cursor.execute("UPDATE users SET activo=0 WHERE id=%s", (user_id,))
     conn.commit()
-    deleted = cursor.rowcount
     cursor.close()
     conn.close()
-    if deleted == 0:
-        return jsonify({"error": "Usuario no encontrado"}), 404
-    return jsonify({"mensaje": "Usuario eliminado"})
+    return jsonify({"mensaje": "Usuario desactivado"})

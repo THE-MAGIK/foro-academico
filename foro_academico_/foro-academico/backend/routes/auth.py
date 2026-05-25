@@ -1,7 +1,7 @@
 """
 Autenticacion y datos basicos de usuario.
 
-Sesion Flask (cookie): login guarda user_id y rol. Registro, /api/me (GET/PATCH),
+Sesion Flask (cookie): login guarda user_id y rol. /api/me (GET/PATCH),
 avatar en disco (static/uploads/avatars) + avatar_ext en BD, Gravatar si no hay foto.
 """
 import glob
@@ -15,7 +15,7 @@ from common import (
     get_json,
     get_user_by_id,
     is_superadmin,
-    normalize_role,
+    is_user_active,
     resolve_avatar_url,
 )
 from logical_auth import (
@@ -83,38 +83,11 @@ def get_users():
         cursor.close()
         conn.close()
         return jsonify({"error": "Solo el administrador supremo puede listar usuarios"}), 403
-    cursor.execute("SELECT id, nombre, email, rol FROM users")
+    cursor.execute("SELECT id, nombre, email, rol, activo FROM users ORDER BY activo DESC, id ASC")
     data = cursor.fetchall()
     cursor.close()
     conn.close()
     return jsonify(data)
-
-
-@bp.route("/api/register", methods=["POST"])
-def register():
-    data = get_json(request)
-    required = ["nombre", "email", "password", "rol"]
-    missing = [f for f in required if not data.get(f)]
-    if missing:
-        return jsonify({"error": f"Faltan campos: {', '.join(missing)}"}), 400
-
-    role = normalize_role(data["rol"])
-    if role not in {"estudiante", "profesor", "admin", "superadmin"}:
-        return jsonify(
-            {"error": "Rol invalido. Usa: estudiante, profesor, admin o superadmin"}
-        ), 400
-
-    conn = get_connection()
-    cursor = conn.cursor()
-    hashed = bcrypt.hashpw(data["password"].encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-    cursor.execute(
-        "INSERT INTO users (nombre, email, password, rol) VALUES (%s,%s,%s,%s)",
-        (data["nombre"], data["email"], hashed, role),
-    )
-    conn.commit()
-    cursor.close()
-    conn.close()
-    return jsonify({"mensaje": "Usuario creado"}), 201
 
 
 @bp.route("/api/login", methods=["POST"])
@@ -151,6 +124,17 @@ def login():
                     "diagnostico": diagnostico_login_credenciales_invalidas(),
                 }
             ), 401
+
+        if not is_user_active(user):
+            cursor.close()
+            conn.close()
+            return jsonify(
+                {
+                    "success": False,
+                    "error": "Cuenta inactiva. Contacta al administrador.",
+                    "diagnostico": diagnostico_login_credenciales_invalidas(),
+                }
+            ), 403
 
         cursor.close()
         conn.close()
@@ -205,7 +189,7 @@ def me():
         cursor.close()
         conn.close()
 
-        if not user:
+        if not user or not is_user_active(user):
             session.clear()
             return jsonify({"authenticated": False}), 401
 

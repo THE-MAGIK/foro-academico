@@ -112,7 +112,7 @@ En el navegador abre la URL que indique la terminal (habitualmente **http://loca
 ## Variables de entorno (opcional)
 
 - **`FLASK_SECRET_KEY`**: clave para firmar cookies de sesión (login). En producción conviene definirla; si no existe, el proyecto usa un valor de desarrollo en código.
-- **`GOOGLE_TRANSLATE_API_KEY`**: solo si usas la función de traducción del backend; sin ella esa parte puede no responder.
+- **Traducción (Google)**: pega tu clave en `GOOGLE_TRANSLATE_API_KEY` dentro de `foro-academico/backend/config.py`. Requiere [Cloud Translation API](https://console.cloud.google.com/apis/library/translate.googleapis.com) habilitada en Google Cloud (suele pedir cuenta de facturacion vinculada).
 
 ---
 
