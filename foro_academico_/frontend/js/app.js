@@ -1016,7 +1016,8 @@ createApp({
       });
       const data = await res.json().catch(()=>({}));
       if(!res.ok){
-        throw new Error(data.error || 'No se pudo traducir');
+        const detalle = data.detail ? ` (${String(data.detail).slice(0, 120)})` : '';
+        throw new Error((data.error || 'No se pudo traducir') + detalle);
       }
       if(!Array.isArray(data.translations) || !data.translations.length){
         throw new Error('Traduccion vacia');
@@ -1051,7 +1052,7 @@ createApp({
       }
     },
 
-    async traducirLotesParalelos(texts, chunkSize = 20){
+    async traducirLotesParalelos(texts, chunkSize = 20, maxConcurrent = 2){
       if(!texts.length){
         return [];
       }
@@ -1059,9 +1060,12 @@ createApp({
       for(let i = 0; i < texts.length; i += chunkSize){
         lotes.push(texts.slice(i, i + chunkSize));
       }
-      const resultados = await Promise.all(
-        lotes.map((lote) => this.llamarTraduccion(lote)),
-      );
+      const resultados = [];
+      for(let i = 0; i < lotes.length; i += maxConcurrent){
+        const oleada = lotes.slice(i, i + maxConcurrent);
+        const oleadaDatos = await Promise.all(oleada.map((lote) => this.llamarTraduccion(lote)));
+        resultados.push(...oleadaDatos);
+      }
       return resultados.flatMap((data) => data.translations);
     },
 

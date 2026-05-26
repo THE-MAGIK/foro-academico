@@ -7,6 +7,7 @@ Listado paginado (q, tag, id); historial (/api/questions/history); crear pregunt
 import html
 import json
 import os
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -534,7 +535,8 @@ def delete_tag_moderation(tag_id):
 
 MYMEMORY_GET_URL = "https://api.mymemory.translated.net/get"
 MYMEMORY_MAX_BYTES = 500
-MYMEMORY_MAX_WORKERS = 8
+MYMEMORY_MAX_WORKERS = 4
+MYMEMORY_FETCH_RETRIES = 3
 # Idioma por defecto del foro (UI y publicaciones en español).
 FORO_IDIOMA_ORIGEN = "es"
 
@@ -590,27 +592,39 @@ def _split_for_mymemory(text, max_bytes=MYMEMORY_MAX_BYTES):
 
 
 def _mymemory_fetch_chunk(chunk, langpair, api_key, target_lang=None):
-    params = {"q": chunk, "langpair": langpair, "mt": "1"}
-    if api_key:
-        params["key"] = api_key
-    url = f"{MYMEMORY_GET_URL}?{urllib.parse.urlencode(params)}"
-    req = urllib.request.Request(url, method="GET")
-    with urllib.request.urlopen(req, timeout=25) as resp:
-        body = resp.read().decode("utf-8")
-    parsed = json.loads(body)
-    status = parsed.get("responseStatus")
-    if status and int(status) == 403 and target_lang:
-        src, _, tgt = langpair.partition("|")
-        if src != FORO_IDIOMA_ORIGEN:
-            fallback = f"{FORO_IDIOMA_ORIGEN}|{tgt or target_lang}"
-            return _mymemory_fetch_chunk(chunk, fallback, api_key, target_lang=None)
-    if status and int(status) != 200:
-        detail = parsed.get("responseDetails") or parsed.get("responseData")
-        raise ValueError(f"MyMemory devolvio estado {status}: {detail}")
-    translated = parsed.get("responseData", {}).get("translatedText", "")
-    if not translated:
-        raise ValueError("MyMemory no devolvio texto traducido")
-    return html.unescape(translated)
+    last_error = None
+    for attempt in range(MYMEMORY_FETCH_RETRIES):
+        try:
+            params = {"q": chunk, "langpair": langpair, "mt": "1"}
+            if api_key:
+                params["key"] = api_key
+            url = f"{MYMEMORY_GET_URL}?{urllib.parse.urlencode(params)}"
+            req = urllib.request.Request(url, method="GET")
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                body = resp.read().decode("utf-8")
+            parsed = json.loads(body)
+            status = parsed.get("responseStatus")
+            if status and int(status) == 403 and target_lang:
+                src, _, tgt = langpair.partition("|")
+                if src != FORO_IDIOMA_ORIGEN:
+                    fallback = f"{FORO_IDIOMA_ORIGEN}|{tgt or target_lang}"
+                    return _mymemory_fetch_chunk(chunk, fallback, api_key, target_lang=None)
+            if status and int(status) == 429:
+                raise urllib.error.URLError("MyMemory limito peticiones (429)")
+            if status and int(status) != 200:
+                detail = parsed.get("responseDetails") or parsed.get("responseData")
+                raise ValueError(f"MyMemory devolvio estado {status}: {detail}")
+            translated = parsed.get("responseData", {}).get("translatedText", "")
+            if not translated:
+                raise ValueError("MyMemory no devolvio texto traducido")
+            return html.unescape(translated)
+        except (urllib.error.URLError, TimeoutError) as exc:
+            last_error = exc
+            if attempt + 1 < MYMEMORY_FETCH_RETRIES:
+                time.sleep(0.6 * (attempt + 1))
+                continue
+            raise
+    raise last_error or urllib.error.URLError("MyMemory no respondio")
 
 
 def _parallel_map(fn, items):
