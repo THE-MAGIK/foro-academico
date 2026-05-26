@@ -112,7 +112,7 @@ En el navegador abre la URL que indique la terminal (habitualmente **http://loca
 ## Variables de entorno (opcional)
 
 - **`FLASK_SECRET_KEY`**: clave para firmar cookies de sesión (login). En producción conviene definirla; si no existe, el proyecto usa un valor de desarrollo en código.
-- **Traducción (Google)**: pega tu clave en `GOOGLE_TRANSLATE_API_KEY` dentro de `foro-academico/backend/config.py`. Requiere [Cloud Translation API](https://console.cloud.google.com/apis/library/translate.googleapis.com) habilitada en Google Cloud (suele pedir cuenta de facturacion vinculada).
+- **Traducción (MyMemory API)**: API REST externa gratuita. Opcionalmente pega tu clave en `MYMEMORY_API_KEY` dentro de `foro-academico/backend/config.py` (~10 000 palabras/día con clave; ~1 000 sin clave). Documentación: [MyMemory API](https://mymemory.translated.net/doc/spec.php). Clave gratuita: [keygen](https://mymemory.translated.net/doc/keygen.php).
 
 ---
 

@@ -2,7 +2,7 @@
 Contenido del foro: preguntas, etiquetas, comentarios, votos y traduccion.
 
 Listado paginado (q, tag, id); historial (/api/questions/history); crear pregunta solo estudiante.
-/api/translate: Google Cloud Translation (clave en backend/config.py).
+/api/translate: MyMemory Translation API (clave opcional en backend/config.py).
 """
 import html
 import json
@@ -10,11 +10,12 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from flask import Blueprint, jsonify, request, session
 
 from common import can_moderate_content, get_json, get_user_by_id, is_student, resolve_avatar_url
-from config import get_google_translate_api_key
+from config import get_mymemory_api_key
 from db import get_connection
 
 bp = Blueprint("questions", __name__)
@@ -531,15 +532,117 @@ def delete_tag_moderation(tag_id):
         return jsonify({"error": "Etiqueta no encontrada"}), 404
     return jsonify({"mensaje": "Etiqueta eliminada"})
 
+MYMEMORY_GET_URL = "https://api.mymemory.translated.net/get"
+MYMEMORY_MAX_BYTES = 500
+MYMEMORY_MAX_WORKERS = 8
+# Idioma por defecto del foro (UI y publicaciones en español).
+FORO_IDIOMA_ORIGEN = "es"
+
+
+def _normalize_lang(code):
+    c = (code or "").strip().lower().replace("_", "-")
+    if c in ("", "auto", "autodetect"):
+        return "autodetect"
+    if "-" in c:
+        c = c.split("-", 1)[0]
+    return c
+
+
+def _same_language_pair(source, target):
+    """MyMemory exige dos idiomas distintos (p. ej. es|es devuelve 403)."""
+    return _resolve_source_lang(source) == _normalize_lang(target)
+
+
+def _resolve_source_lang(source):
+    src = _normalize_lang(source)
+    if src == "autodetect":
+        return FORO_IDIOMA_ORIGEN
+    return src
+
+
+def _mymemory_langpair(source, target):
+    src = _resolve_source_lang(source)
+    tgt = _normalize_lang(target)
+    return f"{src}|{tgt}"
+
+
+def _split_for_mymemory(text, max_bytes=MYMEMORY_MAX_BYTES):
+    raw = text.encode("utf-8")
+    if len(raw) <= max_bytes:
+        return [text]
+    parts = []
+    words = text.split()
+    current = []
+    current_len = 0
+    for word in words:
+        piece = word if not current else " " + word
+        piece_len = len(piece.encode("utf-8"))
+        if current and current_len + piece_len > max_bytes:
+            parts.append(" ".join(current))
+            current = [word]
+            current_len = len(word.encode("utf-8"))
+        else:
+            current.append(word)
+            current_len += piece_len
+    if current:
+        parts.append(" ".join(current))
+    return parts or [text]
+
+
+def _mymemory_fetch_chunk(chunk, langpair, api_key, target_lang=None):
+    params = {"q": chunk, "langpair": langpair, "mt": "1"}
+    if api_key:
+        params["key"] = api_key
+    url = f"{MYMEMORY_GET_URL}?{urllib.parse.urlencode(params)}"
+    req = urllib.request.Request(url, method="GET")
+    with urllib.request.urlopen(req, timeout=25) as resp:
+        body = resp.read().decode("utf-8")
+    parsed = json.loads(body)
+    status = parsed.get("responseStatus")
+    if status and int(status) == 403 and target_lang:
+        src, _, tgt = langpair.partition("|")
+        if src != FORO_IDIOMA_ORIGEN:
+            fallback = f"{FORO_IDIOMA_ORIGEN}|{tgt or target_lang}"
+            return _mymemory_fetch_chunk(chunk, fallback, api_key, target_lang=None)
+    if status and int(status) != 200:
+        detail = parsed.get("responseDetails") or parsed.get("responseData")
+        raise ValueError(f"MyMemory devolvio estado {status}: {detail}")
+    translated = parsed.get("responseData", {}).get("translatedText", "")
+    if not translated:
+        raise ValueError("MyMemory no devolvio texto traducido")
+    return html.unescape(translated)
+
+
+def _parallel_map(fn, items):
+    if not items:
+        return []
+    if len(items) == 1:
+        return [fn(items[0])]
+    out = [None] * len(items)
+    with ThreadPoolExecutor(max_workers=MYMEMORY_MAX_WORKERS) as executor:
+        future_to_idx = {executor.submit(fn, item): i for i, item in enumerate(items)}
+        for future in as_completed(future_to_idx):
+            out[future_to_idx[future]] = future.result()
+    return out
+
+
+def _mymemory_translate_fragment(text, langpair, api_key, target_lang=None):
+    chunks = _split_for_mymemory(text)
+    translated_parts = [
+        _mymemory_fetch_chunk(chunk, langpair, api_key, target_lang=target_lang) for chunk in chunks
+    ]
+    return " ".join(translated_parts)
+
+
 @bp.route("/api/translate", methods=["POST"])
 def translate_text():
-    """Traduce publicaciones del foro via Google Cloud Translation."""
+    """Traduce publicaciones del foro via MyMemory Translation API (REST externa)."""
     if not session.get("user_id"):
         return jsonify({"error": "Debes iniciar sesion para traducir"}), 401
 
     data = get_json(request)
-    target = (data.get("target") or "en").strip().lower()
-    source = (data.get("source") or "auto").strip().lower()
+    target = _normalize_lang(data.get("target") or "en")
+    source = _normalize_lang(data.get("source") or "auto")
 
     raw_texts = data.get("texts")
     if raw_texts is None and data.get("text") is not None:
@@ -547,56 +650,67 @@ def translate_text():
     if not isinstance(raw_texts, list) or not raw_texts:
         return jsonify({"error": "Indica text o texts (lista de cadenas)"}), 400
 
-    texts = [str(t).strip() for t in raw_texts if t is not None and str(t).strip()]
-    if not texts:
-        return jsonify({"error": "No hay texto para traducir"}), 400
-    if len(texts) > 20:
+    if len(raw_texts) > 20:
         return jsonify({"error": "Maximo 20 fragmentos por solicitud"}), 400
 
-    api_key = get_google_translate_api_key()
-    if not api_key:
-        return jsonify(
-            {
-                "error": (
-                    "Falta GOOGLE_TRANSLATE_API_KEY. "
-                    "Pégala en foro-academico/backend/config.py y reinicia Flask."
-                )
-            }
-        ), 503
+    # Conservar posiciones: cadenas vacias no se envian a MyMemory pero se devuelven igual.
+    slots = []
+    to_translate = []
+    for t in raw_texts:
+        s = str(t).strip() if t is not None else ""
+        slots.append(s)
+        if s:
+            to_translate.append(s)
+    if not to_translate:
+        return jsonify({"error": "No hay texto para traducir"}), 400
 
-    form = [("target", target)]
-    if source and source != "auto":
-        form.append(("source", source))
-    for fragment in texts:
-        form.append(("q", fragment))
+    if _same_language_pair(source, target):
+        out = {
+            "translations": slots,
+            "target": target,
+            "provider": "mymemory",
+            "skipped": True,
+            "message": "Origen y destino son el mismo idioma; se devuelve el texto original.",
+        }
+        if len(slots) == 1:
+            out["translatedText"] = slots[0]
+        return jsonify(out)
 
-    endpoint = f"https://translation.googleapis.com/language/translate/v2?key={api_key}"
-    payload = urllib.parse.urlencode(form).encode("utf-8")
-    req = urllib.request.Request(endpoint, data=payload, method="POST")
-    req.add_header("Content-Type", "application/x-www-form-urlencoded")
+    api_key = get_mymemory_api_key()
+    langpair = _mymemory_langpair(source, target)
 
     try:
-        with urllib.request.urlopen(req, timeout=25) as resp:
-            body = resp.read().decode("utf-8")
-        parsed = json.loads(body)
-        rows = parsed.get("data", {}).get("translations", [])
-        translations = [html.unescape(row.get("translatedText", "")) for row in rows]
-        detected = rows[0].get("detectedSourceLanguage") if rows else None
+        translated_nonempty = _parallel_map(
+            lambda fragment: _mymemory_translate_fragment(
+                fragment, langpair, api_key, target_lang=target
+            ),
+            to_translate,
+        )
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
-        return jsonify({"error": "Google Translate rechazo la solicitud", "detail": detail}), 502
+        return jsonify({"error": "MyMemory rechazo la solicitud", "detail": detail}), 502
     except urllib.error.URLError:
-        return jsonify({"error": "No se pudo conectar con Google Translate"}), 503
-    except (json.JSONDecodeError, KeyError, IndexError):
-        return jsonify({"error": "Respuesta invalida de Google Translate"}), 502
+        return jsonify({"error": "No se pudo conectar con MyMemory API"}), 503
+    except (json.JSONDecodeError, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 502
 
-    if len(translations) != len(texts):
+    if len(translated_nonempty) != len(to_translate):
         return jsonify({"error": "Traduccion incompleta"}), 502
+
+    translations = []
+    idx = 0
+    for s in slots:
+        if s:
+            translations.append(translated_nonempty[idx])
+            idx += 1
+        else:
+            translations.append("")
 
     out = {
         "translations": translations,
         "target": target,
-        "detectedSourceLanguage": detected,
+        "provider": "mymemory",
+        "source": _resolve_source_lang(source),
     }
     if len(translations) == 1:
         out["translatedText"] = translations[0]

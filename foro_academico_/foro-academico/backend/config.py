@@ -1,12 +1,14 @@
 """
 Configuracion local del backend (proyecto academico).
 
-Pega aqui la API key de Google Cloud Translation.
+Traduccion via MyMemory API (gratuita, REST externa).
 """
 
-# Google Cloud Translation API — https://console.cloud.google.com/apis/credentials
-GOOGLE_TRANSLATE_API_KEY = ""
+# MyMemory Translation API — https://mymemory.translated.net/doc/spec.php
+# Opcional: sin clave ~1000 palabras/dia; con clave gratuita ~10000 palabras/dia.
+# Genera una en https://mymemory.translated.net/doc/keygen.php (usuario + contrasena).
+MYMEMORY_API_KEY = ""
 
 
-def get_google_translate_api_key():
-    return (GOOGLE_TRANSLATE_API_KEY or "").strip()
+def get_mymemory_api_key():
+    return (MYMEMORY_API_KEY or "").strip()

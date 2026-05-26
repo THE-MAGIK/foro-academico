@@ -80,12 +80,12 @@
       <div class="container-fluid gap-2">
         <span class="navbar-brand-app d-flex align-items-center gap-2 mb-0">
           <span class="brand-dot" aria-hidden="true"></span>
-          <span class="fw-semibold">Foro académico</span>
+          <span class="fw-semibold">{{ textoUI('nav_brand') }}</span>
         </span>
         <input
           v-model="busqueda"
           class="form-control form-control-app navbar-search mx-lg-3 my-2 my-lg-0"
-          placeholder="Buscar preguntas…"
+          :placeholder="textoUI('nav_buscar')"
         >
         <div class="d-flex align-items-center gap-2 ms-lg-auto flex-shrink-0">
           <img
@@ -97,7 +97,7 @@
             height="40"
           >
           <span class="text-white-50 small d-none d-xl-inline text-truncate" style="max-width: 14rem">{{ mensaje }}</span>
-          <button @click="logout" type="button" class="btn btn-sm btn-outline-light">Salir</button>
+          <button @click="logout" type="button" class="btn btn-sm btn-outline-light">{{ textoUI('nav_salir') }}</button>
         </div>
       </div>
     </nav>
@@ -107,43 +107,43 @@
 
         <!-- Sidebar -->
         <aside class="col-md-3 col-lg-2 sidebar-app border-end">
-          <div class="sidebar-head small text-uppercase text-muted px-3 pt-4 pb-2">Menú</div>
+          <div class="sidebar-head small text-uppercase text-muted px-3 pt-4 pb-2">{{ textoUI('menu_titulo') }}</div>
           <ul class="nav flex-column sidebar-menu px-2 pb-4">
-            <li @click="vista='inicio'" :class="{active: vista==='inicio'}">Inicio</li>
-            <li @click="irHistorial" :class="{active: vista==='historial'}">Historial</li>
+            <li @click="vista='inicio'" :class="{active: vista==='inicio'}">{{ textoUI('menu_inicio') }}</li>
+            <li @click="irHistorial" :class="{active: vista==='historial'}">{{ textoUI('menu_historial') }}</li>
             <li
               v-if="esEstudiante"
               @click="irNuevaPregunta"
               :class="{active: vista==='pregunta'}"
             >
-              Haz pregunta
+              {{ textoUI('menu_pregunta') }}
             </li>
             <li
               v-if="esModerador"
               @click="vista='etiquetas'; cargarTagsCatalogo()"
               :class="{active: vista==='etiquetas'}"
             >
-              Etiquetas
+              {{ textoUI('menu_etiquetas') }}
             </li>
             <li
               v-if="esEstudiante || esProfesor || esModerador || esSuperAdmin"
               @click="irAula"
               :class="{active: vista==='aula'}"
             >
-              Aula (tareas)
+              {{ textoUI('menu_aula') }}
             </li>
             <li
               v-if="esSuperAdmin"
               @click="vista='usuariosGlobales'; cargarUsuariosGlobales()"
               :class="{active: vista==='usuariosGlobales'}"
             >
-              Usuarios (supremo)
+              {{ textoUI('menu_usuarios') }}
             </li>
             <li
               @click="vista='perfil'; rellenarPerfilForm()"
               :class="{active: vista==='perfil'}"
             >
-              Editar perfil
+              {{ textoUI('menu_perfil') }}
             </li>
           </ul>
         </aside>
@@ -153,15 +153,15 @@
 
           <div v-if="vista==='inicio'" class="view-panel view-panel--preguntas">
             <div class="view-panel-header text-center mb-3 mx-auto" style="max-width: 28rem">
-              <h3 class="view-panel-title mb-1">Preguntas</h3>
-              <p class="view-panel-sub small mb-0">Foro de dudas y debate</p>
+              <h3 class="view-panel-title mb-1">{{ textoUI('preguntas_titulo') }}</h3>
+              <p class="view-panel-sub small mb-0">{{ textoUI('preguntas_sub') }}</p>
             </div>
             <div class="preguntas-toolbar preguntas-toolbar--row mb-4 mx-auto" style="max-width: 40rem">
-              <input v-model="filtroTag" class="form-control flex-grow-1 min-w-0" placeholder="Filtrar por etiqueta (ej: python)">
-              <button class="btn btn-outline-secondary flex-shrink-0" type="button" @click="cargarPreguntas(1)">Filtrar</button>
+              <input v-model="filtroTag" class="form-control flex-grow-1 min-w-0" :placeholder="textoUI('filtrar_ph')">
+              <button class="btn btn-outline-secondary flex-shrink-0" type="button" @click="cargarPreguntas(1)">{{ textoUI('filtrar_btn') }}</button>
             </div>
             <div class="translate-bar d-flex flex-wrap align-items-center justify-content-center gap-2 mb-3 mx-auto px-2" style="max-width: 40rem">
-              <span class="small text-muted">Traducir publicaciones a:</span>
+              <span class="small text-muted">{{ textoUI('traducir_a') }}</span>
               <select v-model="idiomaTraduccion" class="form-select form-select-sm translate-lang-select">
                 <option value="en">Inglés</option>
                 <option value="es">Español</option>
@@ -173,19 +173,19 @@
               <button
                 type="button"
                 class="btn btn-sm btn-primary"
-                :disabled="traduccionGlobalCargando || preguntas.length === 0"
+                :disabled="traduccionGlobalCargando"
                 @click="alternarTraduccionTodasPublicaciones"
               >
-                <span v-if="traduccionGlobalCargando">Traduciendo…</span>
-                <span v-else-if="traduccionGlobalActiva">Ver originales</span>
-                <span v-else>Traducir todas</span>
+                <span v-if="traduccionGlobalCargando">{{ textoUI('traduciendo') }}</span>
+                <span v-else-if="traduccionGlobalActiva">{{ textoUI('ver_originales') }}</span>
+                <span v-else>{{ textoUI('traducir_todo') }}</span>
               </button>
             </div>
             <p v-if="traduccionGlobalActiva" class="small text-primary text-center mb-4">
-              Mostrando traducción al {{ etiquetaIdiomaTraduccion(idiomaTraduccion) }} (página actual)
+              {{ textoUI('mostrando_trad') }} {{ etiquetaIdiomaTraduccion(idiomaTraduccion) }} {{ textoUI('pagina_actual') }}
             </p>
             <div v-if="preguntas.length === 0" class="empty-state text-center py-5 px-3 rounded-3 mb-3">
-              <p class="mb-0 text-secondary">No hay preguntas para mostrar.</p>
+              <p class="mb-0 text-secondary">{{ textoUI('sin_preguntas') }}</p>
             </div>
             <div v-for="p in preguntas" :key="p.id" :id="'pregunta-'+p.id" class="question-card">
               <div class="d-flex align-items-start gap-2 mb-2">
@@ -216,9 +216,9 @@
                   :disabled="!!(currentUser && votosPreguntas[p.id]?.mi_voto)"
                   @click="votarPregunta(p.id, 'downvote')"
                 >▼</button>
-                <span class="small">Score: {{ votosPreguntas[p.id]?.score ?? 0 }}</span>
+                <span class="small">{{ textoUI('score') }} {{ votosPreguntas[p.id]?.score ?? 0 }}</span>
                 <span v-if="currentUser && votosPreguntas[p.id]?.mi_voto" class="small text-muted">
-                  Ya votaste ({{ votosPreguntas[p.id].mi_voto === 'upvote' ? 'positivo' : 'negativo' }}).
+                  {{ textoUI('ya_votaste') }} ({{ votosPreguntas[p.id].mi_voto === 'upvote' ? textoUI('voto_pos') : textoUI('voto_neg') }}).
                 </span>
               </div>
 
@@ -242,12 +242,12 @@
               </div>
 
               <div class="answers-box">
-                <h6 class="answers-title">Respuestas</h6>
+                <h6 class="answers-title">{{ textoUI('respuestas') }}</h6>
                 <div
                   v-if="!respuestasPorPregunta[p.id] || respuestasPorPregunta[p.id].length === 0"
                   class="text-muted small"
                 >
-                  Aún no hay respuestas.
+                  {{ textoUI('sin_respuestas') }}
                 </div>
 
                 <div
@@ -276,9 +276,9 @@
                       :disabled="!!(currentUser && votosRespuestas[r.id]?.mi_voto)"
                       @click="votarRespuesta(r.id, 'downvote')"
                     >▼</button>
-                    <span class="small">Score: {{ votosRespuestas[r.id]?.score ?? 0 }}</span>
+                    <span class="small">{{ textoUI('score') }} {{ votosRespuestas[r.id]?.score ?? 0 }}</span>
                     <span v-if="currentUser && votosRespuestas[r.id]?.mi_voto" class="small text-muted">
-                      Ya votaste.
+                      {{ textoUI('ya_votaste_corto') }}
                     </span>
                   </div>
                   <div v-if="esModerador" class="admin-actions mt-2">
@@ -305,7 +305,7 @@
 
               <div v-if="esProfesor" class="mt-2">
                 <button @click="toggleResponder(p.id)" class="btn btn-sm btn-outline-primary">
-                  {{ respondiendoPreguntaId === p.id ? 'Cancelar' : 'Responder' }}
+                  {{ respondiendoPreguntaId === p.id ? textoUI('cancelar') : textoUI('responder') }}
                 </button>
               </div>
 
@@ -313,15 +313,15 @@
                 <textarea
                   v-model="borradorRespuesta"
                   class="form-control mb-2"
-                  placeholder="Escribe tu respuesta"
+                  :placeholder="textoUI('respuesta_ph')"
                 ></textarea>
                 <button @click="enviarRespuesta(p.id)" class="btn btn-primary btn-sm">
-                  Publicar respuesta
+                  {{ textoUI('publicar_respuesta') }}
                 </button>
               </div>
 
               <div class="mt-3 preguntas-comentarios-block">
-                <h6 class="answers-title">Comentarios</h6>
+                <h6 class="answers-title">{{ textoUI('comentarios') }}</h6>
                 <div
                   v-for="c in comentariosPorPregunta[p.id] || []"
                   :key="c.id"
@@ -336,26 +336,26 @@
                     height="24"
                   >
                   <div>
-                    <strong>{{ c.autor || 'Usuario' }}:</strong> {{ c.contenido }}
+                    <strong>{{ c.autor || textoUI('usuario') }}:</strong> {{ contenidoComentarioMostrado(c) }}
                   </div>
                 </div>
                 <div v-if="currentUser" class="d-flex gap-2 mt-2">
-                  <input v-model="comentarioDraft[p.id]" class="form-control form-control-sm" placeholder="Escribe un comentario">
-                  <button class="btn btn-sm btn-outline-primary" @click="comentarPregunta(p.id)">Comentar</button>
+                  <input v-model="comentarioDraft[p.id]" class="form-control form-control-sm" :placeholder="textoUI('comentario_ph')">
+                  <button class="btn btn-sm btn-outline-primary" @click="comentarPregunta(p.id)">{{ textoUI('comentar') }}</button>
                 </div>
               </div>
             </div>
 
             <div class="preguntas-pager d-flex justify-content-between align-items-center mt-4 px-2 py-3 rounded-3 mx-auto" style="max-width: 36rem">
-              <button class="btn btn-outline-secondary btn-sm" type="button" :disabled="page<=1" @click="cargarPreguntas(page-1)">Anterior</button>
-              <span class="small text-secondary fw-medium">Página {{ page }} de {{ totalPages }}</span>
-              <button class="btn btn-outline-secondary btn-sm" type="button" :disabled="page>=totalPages" @click="cargarPreguntas(page+1)">Siguiente</button>
+              <button class="btn btn-outline-secondary btn-sm" type="button" :disabled="page<=1" @click="cargarPreguntas(page-1)">{{ textoUI('anterior') }}</button>
+              <span class="small text-secondary fw-medium">{{ textoUI('pagina') }} {{ page }} {{ textoUI('de') }} {{ totalPages }}</span>
+              <button class="btn btn-outline-secondary btn-sm" type="button" :disabled="page>=totalPages" @click="cargarPreguntas(page+1)">{{ textoUI('siguiente') }}</button>
             </div>
           </div>
 
           <div v-if="vista==='historial'" class="view-panel view-panel--historial">
             <div class="view-panel-header text-center mb-3 mx-auto" style="max-width: 32rem">
-              <h3 class="view-panel-title mb-1">Historial de preguntas</h3>
+              <h3 class="view-panel-title mb-1">{{ textoUI('hist_titulo') }}</h3>
               <p class="view-panel-sub small mb-0">{{ historialSubtitulo }}</p>
             </div>
             <div v-if="historialPreguntas.length === 0" class="empty-state text-center py-5 px-3 rounded-3 mb-3">
@@ -386,7 +386,7 @@
                 <span v-for="tag in p.tags" :key="tag" class="badge text-bg-secondary me-1">#{{ tag }}</span>
               </div>
               <button type="button" class="btn btn-sm btn-outline-primary" @click="verPreguntaEnInicio(p.id)">
-                Ver en el foro
+                {{ textoUI('ver_en_foro') }}
               </button>
             </div>
 
@@ -395,9 +395,9 @@
               class="preguntas-pager d-flex justify-content-between align-items-center mt-4 px-2 py-3 rounded-3 mx-auto"
               style="max-width: 36rem"
             >
-              <button class="btn btn-outline-secondary btn-sm" type="button" :disabled="historialPage<=1" @click="cargarHistorialPreguntas(historialPage-1)">Anterior</button>
-              <span class="small text-secondary fw-medium">Página {{ historialPage }} de {{ historialTotalPages }}</span>
-              <button class="btn btn-outline-secondary btn-sm" type="button" :disabled="historialPage>=historialTotalPages" @click="cargarHistorialPreguntas(historialPage+1)">Siguiente</button>
+              <button class="btn btn-outline-secondary btn-sm" type="button" :disabled="historialPage<=1" @click="cargarHistorialPreguntas(historialPage-1)">{{ textoUI('anterior') }}</button>
+              <span class="small text-secondary fw-medium">{{ textoUI('pagina') }} {{ historialPage }} {{ textoUI('de') }} {{ historialTotalPages }}</span>
+              <button class="btn btn-outline-secondary btn-sm" type="button" :disabled="historialPage>=historialTotalPages" @click="cargarHistorialPreguntas(historialPage+1)">{{ textoUI('siguiente') }}</button>
             </div>
           </div>
 

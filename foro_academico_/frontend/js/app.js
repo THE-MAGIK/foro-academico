@@ -22,6 +22,57 @@ const API = (() => {
   return 'http://127.0.0.1:3000';
 })();
 
+/** Textos de interfaz (español) traducibles con la API cuando está activa la traducción global. */
+const TEXTOS_UI = {
+  nav_brand: 'Foro académico',
+  nav_buscar: 'Buscar preguntas…',
+  nav_salir: 'Salir',
+  menu_titulo: 'Menú',
+  menu_inicio: 'Inicio',
+  menu_historial: 'Historial',
+  menu_pregunta: 'Haz pregunta',
+  menu_etiquetas: 'Etiquetas',
+  menu_aula: 'Aula (tareas)',
+  menu_usuarios: 'Usuarios (supremo)',
+  menu_perfil: 'Editar perfil',
+  preguntas_titulo: 'Preguntas',
+  preguntas_sub: 'Foro de dudas y debate',
+  filtrar_ph: 'Filtrar por etiqueta (ej: python)',
+  filtrar_btn: 'Filtrar',
+  traducir_a: 'Traducir todo a:',
+  traduciendo: 'Traduciendo…',
+  ver_originales: 'Ver originales',
+  traducir_todo: 'Traducir todo',
+  mostrando_trad: 'Mostrando traducción al',
+  pagina_actual: '(página actual)',
+  sin_preguntas: 'No hay preguntas para mostrar.',
+  score: 'Score:',
+  ya_votaste: 'Ya votaste',
+  voto_pos: 'positivo',
+  voto_neg: 'negativo',
+  respuestas: 'Respuestas',
+  sin_respuestas: 'Aún no hay respuestas.',
+  ya_votaste_corto: 'Ya votaste.',
+  comentarios: 'Comentarios',
+  comentario_ph: 'Escribe un comentario',
+  comentar: 'Comentar',
+  cancelar: 'Cancelar',
+  responder: 'Responder',
+  respuesta_ph: 'Escribe tu respuesta',
+  publicar_respuesta: 'Publicar respuesta',
+  anterior: 'Anterior',
+  siguiente: 'Siguiente',
+  pagina: 'Página',
+  de: 'de',
+  usuario: 'Usuario',
+  hist_titulo: 'Historial de preguntas',
+  hist_sub_est: 'Preguntas que has publicado en el foro, de la más reciente a la más antigua.',
+  hist_sub_all: 'Todas las preguntas creadas en el foro, de la más reciente a la más antigua.',
+  hist_vacio_est: 'Aún no has publicado ninguna pregunta.',
+  hist_vacio_all: 'No hay preguntas registradas en el foro.',
+  ver_en_foro: 'Ver en el foro',
+};
+
 createApp({
   data(){
     return {
@@ -51,6 +102,8 @@ createApp({
       traduccionGlobalCargando: false,
       traduccionesPreguntas: {},
       traduccionesRespuestas: {},
+      traduccionesComentarios: {},
+      traduccionesUI: {},
       currentUser: null,
       respuestasPorPregunta: {},
       comentariosPorPregunta: {},
@@ -123,16 +176,10 @@ createApp({
       return this.tituloDiagnostico(this.loginDiagnostico?.regla);
     },
     historialSubtitulo(){
-      if(this.esEstudiante){
-        return 'Preguntas que has publicado en el foro, de la más reciente a la más antigua.';
-      }
-      return 'Todas las preguntas creadas en el foro, de la más reciente a la más antigua.';
+      return this.textoUI(this.esEstudiante ? 'hist_sub_est' : 'hist_sub_all');
     },
     historialVacio(){
-      if(this.esEstudiante){
-        return 'Aún no has publicado ninguna pregunta.';
-      }
-      return 'No hay preguntas registradas en el foro.';
+      return this.textoUI(this.esEstudiante ? 'hist_vacio_est' : 'hist_vacio_all');
     },
   },
 
@@ -865,8 +912,27 @@ createApp({
     reiniciarTraducciones(){
       this.traduccionesPreguntas = {};
       this.traduccionesRespuestas = {};
+      this.traduccionesComentarios = {};
+      this.traduccionesUI = {};
       this.traduccionGlobalActiva = false;
       this.traduccionGlobalCargando = false;
+    },
+
+    textoUI(clave){
+      const original = TEXTOS_UI[clave];
+      if(!original){
+        return clave;
+      }
+      if(!this.traduccionGlobalActiva){
+        return original;
+      }
+      return this.traduccionesUI[clave] ?? original;
+    },
+
+    uiTraduccionCompleta(){
+      return Object.keys(TEXTOS_UI).every(
+        (k) => this.traduccionesUI[k] && this.traduccionesUI._idioma === this.idiomaTraduccion,
+      );
     },
 
     tituloPreguntaMostrado(p){
@@ -893,9 +959,20 @@ createApp({
       return t?.contenido ?? r.contenido;
     },
 
+    contenidoComentarioMostrado(c){
+      if(!this.traduccionGlobalActiva){
+        return c.contenido;
+      }
+      const t = this.traduccionesComentarios[c.id];
+      return t?.contenido ?? c.contenido;
+    },
+
     paginaTraduccionCompleta(){
-      if(!this.preguntas.length){
+      if(!this.uiTraduccionCompleta()){
         return false;
+      }
+      if(!this.preguntas.length){
+        return true;
       }
       for(const p of this.preguntas){
         const t = this.traduccionesPreguntas[p.id];
@@ -908,19 +985,33 @@ createApp({
             return false;
           }
         }
+        for(const c of (this.comentariosPorPregunta[p.id] || [])){
+          const tc = this.traduccionesComentarios[c.id];
+          if(!tc || tc.idioma !== this.idiomaTraduccion || tc.contenido === undefined){
+            return false;
+          }
+        }
       }
       return true;
     },
 
+    idiomaDestinoEsEspanol(target){
+      return (target || this.idiomaTraduccion || '').toLowerCase().split('-')[0] === 'es';
+    },
+
     async llamarTraduccion(texts, target){
+      const destino = (target || this.idiomaTraduccion || 'en').toLowerCase().split('-')[0];
+      if(destino === 'es'){
+        return { translations: [...texts], skipped: true };
+      }
       const res = await fetch(`${API}/api/translate`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           texts,
-          target: target || this.idiomaTraduccion,
-          source: 'auto',
+          target: destino,
+          source: 'es',
         }),
       });
       const data = await res.json().catch(()=>({}));
@@ -941,11 +1032,12 @@ createApp({
         this.traduccionGlobalActiva = false;
         return;
       }
-      if(!this.preguntas.length){
-        return this.mostrarAviso('No hay publicaciones en esta página');
-      }
       if(this.paginaTraduccionCompleta()){
         this.traduccionGlobalActiva = true;
+        return;
+      }
+      if(this.idiomaDestinoEsEspanol()){
+        this.mostrarAviso('El foro ya está en español. Elige otro idioma (por ejemplo Inglés).');
         return;
       }
       this.traduccionGlobalCargando = true;
@@ -959,7 +1051,55 @@ createApp({
       }
     },
 
-    async traducirPublicacionesPagina(){
+    async traducirLotesParalelos(texts, chunkSize = 20){
+      if(!texts.length){
+        return [];
+      }
+      const lotes = [];
+      for(let i = 0; i < texts.length; i += chunkSize){
+        lotes.push(texts.slice(i, i + chunkSize));
+      }
+      const resultados = await Promise.all(
+        lotes.map((lote) => this.llamarTraduccion(lote)),
+      );
+      return resultados.flatMap((data) => data.translations);
+    },
+
+    async traducirTextosUI(){
+      const keys = Object.keys(TEXTOS_UI);
+      const texts = keys.map((k) => TEXTOS_UI[k]);
+      const traducciones = await this.traducirLotesParalelos(texts);
+      keys.forEach((key, idx)=>{
+        this.traduccionesUI[key] = traducciones[idx];
+      });
+      this.traduccionesUI._idioma = this.idiomaTraduccion;
+    },
+
+    aplicarTraduccionesJobs(jobs, traducciones){
+      jobs.forEach((job, idx)=>{
+        const translated = traducciones[idx];
+        if(job.kind === 'pregunta'){
+          const prev = this.traduccionesPreguntas[job.id] || {};
+          this.traduccionesPreguntas[job.id] = {
+            ...prev,
+            [job.field]: translated,
+            idioma: this.idiomaTraduccion,
+          };
+        }else if(job.kind === 'respuesta'){
+          this.traduccionesRespuestas[job.id] = {
+            contenido: translated,
+            idioma: this.idiomaTraduccion,
+          };
+        }else{
+          this.traduccionesComentarios[job.id] = {
+            contenido: translated,
+            idioma: this.idiomaTraduccion,
+          };
+        }
+      });
+    },
+
+    recolectarJobsTraduccionContenido(){
       const jobs = [];
       for(const p of this.preguntas){
         jobs.push({ kind: 'pregunta', id: p.id, field: 'titulo', text: p.titulo || '' });
@@ -967,32 +1107,27 @@ createApp({
         for(const r of (this.respuestasPorPregunta[p.id] || [])){
           jobs.push({ kind: 'respuesta', id: r.id, field: 'contenido', text: r.contenido || '' });
         }
+        for(const c of (this.comentariosPorPregunta[p.id] || [])){
+          jobs.push({ kind: 'comentario', id: c.id, field: 'contenido', text: c.contenido || '' });
+        }
       }
-      if(!jobs.length){
-        throw new Error('No hay texto para traducir');
-      }
+      return jobs;
+    },
 
-      const chunkSize = 20;
-      for(let i = 0; i < jobs.length; i += chunkSize){
-        const chunk = jobs.slice(i, i + chunkSize);
-        const data = await this.llamarTraduccion(chunk.map(j => j.text));
-        chunk.forEach((job, idx)=>{
-          const translated = data.translations[idx];
-          if(job.kind === 'pregunta'){
-            const prev = this.traduccionesPreguntas[job.id] || {};
-            this.traduccionesPreguntas[job.id] = {
-              ...prev,
-              [job.field]: translated,
-              idioma: this.idiomaTraduccion,
-            };
-          }else{
-            this.traduccionesRespuestas[job.id] = {
-              contenido: translated,
-              idioma: this.idiomaTraduccion,
-            };
-          }
-        });
+    async traducirContenidoPagina(){
+      const jobs = this.recolectarJobsTraduccionContenido();
+      if(!jobs.length){
+        return;
       }
+      const traducciones = await this.traducirLotesParalelos(jobs.map((j) => j.text));
+      this.aplicarTraduccionesJobs(jobs, traducciones);
+    },
+
+    async traducirPublicacionesPagina(){
+      await Promise.all([
+        this.traducirTextosUI(),
+        this.traducirContenidoPagina(),
+      ]);
     },
 
     async editarPreguntaComoAdmin(question){
